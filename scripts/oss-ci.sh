@@ -185,24 +185,7 @@ cmd_security() {
     s="$(scope)"
     install_cargo_tool cargo-audit "$CARGO_AUDIT_VERSION" cargo-audit
     install_cargo_tool cargo-deny "$CARGO_DENY_VERSION" cargo-deny
-    # RUSTSEC-2024-0436 is an unmaintained warning, not a vulnerability. It is
-    # confined to arrow-flight 58.4.0 behind packdb-client flight-sql. Remove
-    # this exception on an Arrow upgrade or by 2026-12-31, whichever comes first.
-    [[ "$(date -u +%Y-%m-%d)" < "2027-01-01" ]] ||
-        die "RUSTSEC-2024-0436 exception expired; upgrade Arrow Flight"
-    cargo tree -i paste --locked --all-features --prefix none |
-        grep -Fx "arrow-flight v58.4.0" >/dev/null ||
-        die "RUSTSEC-2024-0436 scope changed; review or remove the exception"
-    # GHSA-w9wp-h8wv-79jx affects the upstream 0.31.0 baggage parser. The
-    # HTTP and gRPC extractors bound untrusted input to the patched upstream
-    # limits (8 KiB and 64 entries) before calling it. Remove this exception
-    # on an OpenTelemetry upgrade or by 2026-12-31, whichever comes first.
-    [[ "$(date -u +%Y-%m-%d)" < "2027-01-01" ]] ||
-        die "GHSA-w9wp-h8wv-79jx exception expired; upgrade OpenTelemetry"
-    cargo tree -i opentelemetry_sdk --locked --all-features --prefix none |
-        grep -Fx "opentelemetry_sdk v0.31.0" >/dev/null ||
-        die "GHSA-w9wp-h8wv-79jx scope changed; review or remove the exception"
-    cargo audit --deny warnings --ignore RUSTSEC-2024-0436
+    cargo audit --deny warnings
     cargo deny --locked --all-features check licenses bans sources
     if ! command -v gitleaks >/dev/null 2>&1; then
         [[ -n "${CI:-}" ]] || die "gitleaks $GITLEAKS_VERSION is required"

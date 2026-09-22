@@ -25,7 +25,7 @@ use opentelemetry::propagation::{Extractor, Injector, TextMapCompositePropagator
 use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
 use tonic::metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue};
 
-// W3C Baggage limits. Enforce these before the 0.31 propagator parses an
+// W3C Baggage limits. Enforce these before the propagator parses an
 // attacker-controlled value; GHSA-w9wp-h8wv-79jx fixed the same unbounded
 // allocation by adding these two limits upstream in opentelemetry_sdk 0.32.1.
 const MAX_BAGGAGE_LENGTH: usize = 8192;

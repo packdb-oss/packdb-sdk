@@ -1,10 +1,10 @@
-# packdb-sdk export from monorepo 1c25816956b11f294d1a11901e8f7b97bb0228e1
+# packdb-sdk export from monorepo 545fb2f5ddef9346296ee0ef08738f7742925f93
 # 49 files
 5a4dbd4836353e4a9f151a6be0b4dbb7dedf0e14d66ccf47f8398234e988515b         80  .github/CODEOWNERS
 ce575ab185eab1d319b89ad41b414da89a1e836a93f01295cffbca83b7ec32c4        420  .github/ISSUE_TEMPLATE/bug_report.md
 866952ad8d2940cecabcf978e6c972838cb1b0d6cbaa99241ec026ee0095ca9d        325  .github/ISSUE_TEMPLATE/feature_request.md
 8be2381baf9196a5451bbb3ef80f014fc42348c283d5ddeacbfe64263acc4e03        556  .github/PULL_REQUEST_TEMPLATE.md
-6a082e0c22e36e7ae754cb611bc1b8cbb96924355b87480dae1cbb7e57a8bcb2        259  .github/dependabot.yml
+218637977ce196df090ddd547ba3883e762331ba73cdf936f918b24422172a8f        605  .github/dependabot.yml
 d65685ac328fd9467abaa9ac2389132b31d4456eb058135fa2cdbb8854669175       1512  .github/workflows/oss-candidate.yml
 70deccab4ffd73e15a64d3fd26ab6c1d237fbde84e86d3022bcac073c2d1581e       1448  .github/workflows/oss-ci.yml
 80f2e311ac2a490b4c1cb97dc94cb36df8d719ddc167d8498bec91cd72e2ec55       1396  .github/workflows/oss-publish.yml
@@ -16,9 +16,9 @@ cb1274a33c26053322d656254449677fd319e1e38f0f14f44361615e8b88261b        456  CHA
 718737386f4787349b152d82b243c0148a491f28060003f5fd5bd2e71376dea5       3286  CODING_STANDARDS.md
 adb09570259635c4af666b50901b6d61a811b78172e67b792c74b494381cba0a       1448  COMPATIBILITY.md
 a77fa5dadbf534914871234b837cf4b5ee147381cb0c6d0e9473e556ca06983e       2007  CONTRIBUTING.md
-3013f8cf1406a603e0ba6131ec60ac810c57fd4e6cc1ed180e3535701b2c1a3f      73213  Cargo.lock
-fc975727e9f19bb1fcdaf6d1e053fe1aac693b13fab58fb81c92399c21e19c2f        860  Cargo.toml
-c7cee0cf5df982d6395c0b7134f5ea09c00bb5621444625759724245b7a1bde5       3134  EXPORT_MANIFEST.md
+ebc73139409b5b605c8c66dcaaf250a18c28a776f802723e75bead46481bb872      73524  Cargo.lock
+fb32e8b970d678d7c991660db7256c0be0e759278588015dd622959e27d19fc4        920  Cargo.toml
+273a4865985f1f845267357303d0d95c0d0330301fa25d29d5c1e5d846e82399       3542  EXPORT_MANIFEST.md
 c6dfa89a3f968e98d35b1e5d9f45e5a81898e08e645a41063b698d32e4ba3a47       1610  GOVERNANCE.md
 538dba60bc0cbd0a447ef27192626b31e45c2609907b2b1e265c00dce3641725      11064  LICENSE
 ea64397b5aaf54e8c1300fb18853fcc0bce5a20ff46c118ea5c31c815d12cc99        877  MAINTAINERS.md
@@ -26,7 +26,7 @@ ea64397b5aaf54e8c1300fb18853fcc0bce5a20ff46c118ea5c31c815d12cc99        877  MAI
 1b6fe97b8bbad44c97ac6218930ef5827110ae2dbea213191c9d51199c8d13fa       2038  RELEASING.md
 d63898d56a6ade84cf748bb4e7448b4292a64e121a9d6e61d409e1a2cc205d6d       1089  SECURITY.md
 bfd4a3b8b2fb79ade375d16681cfe4b76b46aa5a154c2224fac8a64aac7bb260        800  SUPPORT.md
-e5adbc4dbcec900585b961569846aef541c3107aae39370c343f8c20597f3418       1732  crates/packdb-client/Cargo.toml
+fbc34f7c0ada004ad9ad93ac811e5722f5af4826e90d7309ae65e52a35da8cd8       1732  crates/packdb-client/Cargo.toml
 538dba60bc0cbd0a447ef27192626b31e45c2609907b2b1e265c00dce3641725      11064  crates/packdb-client/LICENSE
 0960e928caa20c2c5697395672613acd4e4610a2e4cd33a5ed0936ca2c78b352        947  crates/packdb-client/README.md
 cc44476a06759c12e7908a6f18abfc80f7f7bd0fb0d5e0ddec9cc0f4e0f11c06       2037  crates/packdb-client/examples/query.rs
@@ -37,15 +37,15 @@ d7eda0d7aa80c20873d4e7c46fb9c3d460adde85da4309bf1a4d8dd186449a44       5125  cra
 c2fcd6d122c0ec3ba96e919b54e43d9f6a7ff3447d0b3c8072ad7dda1cb19b69       1279  crates/packdb-client/src/lib.rs
 19f0e75e236e1b8f2ef120a496dfd4fd8d497d1b9d9151bd70f5e349942729e3       3053  crates/packdb-client/src/outcome.rs
 8cfecef23b58e21045c51ab67d85da0734f73967c2097a1337dd558c76b430c7      39318  crates/packdb-client/src/sql.rs
-d5ad1fec0fc3c025986b0d8bd6427f659b686b783a855c79ebb35932c415f34e        645  crates/packdb-otel/Cargo.toml
+60cf20c5353853426f42e0d11760d8a50f134d68767ea16a9a3c4764237ce2e5        645  crates/packdb-otel/Cargo.toml
 538dba60bc0cbd0a447ef27192626b31e45c2609907b2b1e265c00dce3641725      11064  crates/packdb-otel/LICENSE
 e76f2f7aacbec1d9d32494468f504f8571dc75f369db380e284e6ce3e7f65b51        644  crates/packdb-otel/README.md
-4c3df9639a01c9809116c8271b9d2d097da23aec11cd46308b7fd3d334b30e63       8045  crates/packdb-otel/src/lib.rs
+2d0643459270b394afb36e31feb746c206ec45ead839cf0928d78c079244951a       8040  crates/packdb-otel/src/lib.rs
 1abc3071c5861cb7361d2feb730dc2e5ce36c6a0221866a0ce3dfb1fd81d0911        549  deny.toml
-36641d3ceb7614e7ce2eec07b6f562a522a464ae4374cb5304a5012d0cdf1a51      17777  docs/WORKFLOWS.md
+ec5d95a3fa147a9b420c757999b0ab65655eae6e801e8071b6c83a680aee722f      17279  docs/WORKFLOWS.md
 afb72d454bd911fd19fede66e976d164f196d0ed38ed9ed6d7d44cfb165d1b24        426  rust-toolchain.toml
 a239081a031e40144b7a44f4628055dcc6d69f5a930d0379794b833240814c9d        192  scripts/coverage_declaration_only.txt
 fb1c7a04a96b7fc404ee266a0f6f3f2661aa2459c458e3e0d8ba81620f6d774b       9200  scripts/coverage_gate.py
 85544f53d1fabb69bf9855f95f6dcc3ba1bde08266c6545cab0e6a018169986a       5049  scripts/export_clean.py
 85eef02ab9b22f4aa768adde4351febfe05292a15e0d3edd362bbc1096146562        670  scripts/gitleaks-version.sh
-8db6e545342de40d4687506d88f8e257ec41623da8eca7aeef4319a4ac194728      12577  scripts/oss-ci.sh
+a83363c94139ecb8da43018fa0a8c73c7639399c037ed7a95d9726bb677c6897      11348  scripts/oss-ci.sh
