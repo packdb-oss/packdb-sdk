@@ -1506,7 +1506,7 @@ dependencies = [
  "arrow",
  "arrow-flight",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "futures",
  "http",
  "opentelemetry",
