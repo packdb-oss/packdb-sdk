@@ -17,7 +17,7 @@ packdb-otel = { version = "0.2.0", path = "../packdb-otel", optional = true }
 arrow = { version = "58.3", features = ["prettyprint", "csv", "json"], optional = true }
 arrow-flight = { version = "58.3", features = ["flight-sql"], optional = true }
 async-trait = { version = "0.1" }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 futures = { version = "0.3", optional = true }
 http = { version = "1.3", optional = true }
 opentelemetry = { version = "0.31", features = ["trace", "metrics", "logs"], optional = true }
