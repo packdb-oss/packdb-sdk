@@ -1,0 +1,43 @@
+[package]
+name = "packdb-client"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.94.1"
+description = "PackDB SQL client, output formats, and caller-supplied credential transport."
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["packdb", "client", "sql", "observability"]
+repository = "https://github.com/packdb-oss/packdb-sdk"
+# Retained deliberately during private staging. Publication requires
+# a separate reviewed allowlist change and release authorization.
+publish = false
+
+[dependencies]
+packdb-otel = { version = "0.2.0", path = "../packdb-otel", optional = true }
+arrow = { version = "58.3", features = ["prettyprint", "csv", "json"], optional = true }
+arrow-flight = { version = "58.3", features = ["flight-sql"], optional = true }
+async-trait = { version = "0.1" }
+base64 = { version = "0.22" }
+futures = { version = "0.3", optional = true }
+http = { version = "1.3", optional = true }
+opentelemetry = { version = "0.31", features = ["trace", "metrics", "logs"], optional = true }
+reqwest = { version = "0.13", features = ["json", "query", "form"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+thiserror = { version = "2.0" }
+tokio = { version = "1.49", features = ["full"] }
+uuid = { version = "1.20", features = ["v4", "v5", "serde"] }
+tonic = { version = "0.14", features = ["gzip", "zstd"], optional = true }
+tracing = { version = "0.1" }
+
+[dev-dependencies]
+tokio = { version = "1.49", features = ["full", "macros", "rt", "net", "io-util"] }
+wiremock = { version = "0.6" }
+
+[features]
+default = []
+sql = ["dep:arrow", "dep:http", "dep:opentelemetry", "dep:packdb-otel"]
+flight-sql = ["sql", "arrow-flight", "futures", "tonic"]
+
+[lints.rust]
+missing_docs = "deny"

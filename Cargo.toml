@@ -1,0 +1,30 @@
+# Standalone workspace for the PackDB Rust SDK.
+#
+# This repository is an export: its sources are assembled deterministically
+# from a pinned PackDB commit, recorded in EXPORT_MANIFEST.md. It is not a
+# fork and it is not edited in place — a change belongs upstream, and reaches
+# here by regenerating the export.
+#
+# Unlike the monorepo it came from, this workspace inherits nothing: every
+# dependency version below is the concrete value the monorepo held at the
+# pinned commit, so the tree builds with no access to anything private.
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/packdb-core",
+    "crates/packdb-api",
+    "crates/packdb-otel",
+    "crates/packdb-client",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.94.1"
+license = "Apache-2.0"
+
+[profile.release]
+# Match the monorepo's release shape so a binary built here behaves as one
+# built there.
+lto = "thin"
+codegen-units = 1

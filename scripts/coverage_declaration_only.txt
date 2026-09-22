@@ -1,0 +1,5 @@
+# Files with no executable statements, verified by scripts/coverage_gate.py.
+# path<TAB>reason
+crates/packdb-api/src/lib.rs	crate root with module declarations and re-exports
+crates/packdb-client/src/lib.rs	crate root with feature-gated module declarations and re-exports
+crates/packdb-core/src/lib.rs	crate root with declarations, re-exports, and a data-only request ID type

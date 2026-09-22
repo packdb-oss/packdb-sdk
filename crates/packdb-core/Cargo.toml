@@ -1,0 +1,30 @@
+[package]
+name = "packdb-core"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.94.1"
+description = "Shared build identity, request IDs, public-origin validation, and service lifecycle utilities."
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["packdb", "observability", "telemetry"]
+repository = "https://github.com/packdb-oss/packdb-sdk"
+# Retained deliberately during private staging. Publication requires
+# a separate reviewed allowlist change and release authorization.
+publish = false
+
+[dependencies]
+http = { version = "1.3" }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.49", features = ["full"], optional = true }
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+serde_json = { version = "1.0" }
+tokio = { version = "1.49", features = ["full"] }
+
+[features]
+default = []
+service-lifecycle = ["dep:tokio", "dep:tracing"]
+
+[lints.rust]
+missing_docs = "deny"
