@@ -6,10 +6,6 @@ API and serialized response shapes. Release notes identify intentional changes.
 
 ## Package contracts
 
-- `packdb-core`: build identity, request IDs, public-origin validation, service
-  outcomes, and shutdown helpers. The `service-lifecycle` feature is optional.
-- `packdb-api`: response envelopes and Prometheus/Loki response types. Serialized
-  field names and omission/null behavior are wire contracts.
 - `packdb-otel`: W3C trace-context and baggage propagation through HTTP headers and
   gRPC metadata. Applications own exporter configuration and routing.
 - `packdb-client`: no default features. `sql` enables SQL over HTTP;
@@ -22,10 +18,11 @@ unification cannot hide a broken configuration.
 
 ## Exclusions
 
-The SDK transports credentials supplied by its caller. It does not issue or validate
-credentials, resolve organizations or tenants, call the control plane, enforce
-quotas, or perform cell placement and routing. Those are separate commercial
-surfaces and are not compatibility promises of these packages.
+The SDK transports credentials supplied by its caller. It does not ship server
+lifecycle/build primitives or duplicate Loki/Prometheus response DTOs, issue or
+validate credentials, resolve organizations or tenants, call the control plane,
+enforce quotas, or perform cell placement and routing. Those are not compatibility
+promises of these packages.
 
 The MSRV is Rust 1.94.1. Raising it is a documented release change. Support is
 community best effort; this compatibility statement makes no quality, availability,

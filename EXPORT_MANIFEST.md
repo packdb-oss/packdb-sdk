@@ -18,16 +18,14 @@ reverted by the next regeneration.
 
 | | |
 | --- | --- |
-| source commit | `8d989a092182cc1c5880257f3745bb698d61bc59` |
+| source commit | `1c25816956b11f294d1a11901e8f7b97bb0228e1` |
 | repository | `packdb-sdk` |
-| members | 4 |
+| members | 2 |
 | files | see `FILE_INVENTORY.txt` |
 | checksums | see `SHA256SUMS` |
 
 ## Members
 
-- `packdb-core` (`crates/packdb-core`), from `crates/packdb-core`
-- `packdb-api` (`crates/packdb-api`), from `crates/packdb-api`
 - `packdb-otel` (`crates/packdb-otel`), from `crates/packdb-otel`
 - `packdb-client` (`crates/packdb-client`), from `crates/packdb-client`
 
@@ -35,9 +33,10 @@ reverted by the next regeneration.
 
 1. **Extracted** from the commit with `git archive`, never from a working
    tree, so uncommitted local state cannot leak in.
-2. **Sanitised** by anchored edits that remove internal design-document
-   citations. Each anchor must match exactly once or the export fails: a
-   fuzzy match would let a changed line through unreviewed.
+2. **Inspected by the sanitiser.** When a source needs an internal citation
+   removed, the edit is anchored and must match exactly once. This target
+   currently expects `0` source edit(s); the denylist
+   still scans the complete result when that count is zero.
 3. **Manifests rewritten** so nothing inherits from the monorepo workspace.
    Every dependency version here is the concrete value that workspace held
    at the source commit. `Cargo.lock` is then copied from the kit's reviewed

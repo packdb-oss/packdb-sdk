@@ -100,6 +100,12 @@ than a fabricated change range. Full runs scan/score the entire selected source 
   warning for `paste 1.0.15` reached only through `arrow-flight 58.4.0` and the
   optional `packdb-client/flight-sql` feature. PackDB maintainers own it; the
   adapter refuses if that dependency path changes or after 2026-12-31.
+  GitHub advisory `GHSA-w9wp-h8wv-79jx` applies to the
+  `opentelemetry_sdk 0.31.0` baggage parser. The SDK's HTTP and gRPC extractors
+  enforce the upstream patched limits (8 KiB per header and 64 entries) before
+  delegation. PackDB maintainers own this boundary mitigation; the adapter
+  refuses if the dependency version changes or after 2026-12-31. Upgrade
+  OpenTelemetry and remove the exception by that date.
 - `candidate`: require successful preceding gates for the exact source SHA. Reuse
   trusted same-SHA results and artifact hashes; rerun only missing, changed or stale
   gates (refresh advisory checks at release). Build the declared target matrix, smoke-test

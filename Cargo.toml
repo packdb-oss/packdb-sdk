@@ -12,8 +12,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/packdb-core",
-    "crates/packdb-api",
     "crates/packdb-otel",
     "crates/packdb-client",
 ]

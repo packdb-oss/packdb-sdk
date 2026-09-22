@@ -1500,14 +1500,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "packdb-api"
-version = "0.2.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "packdb-client"
 version = "0.2.0"
 dependencies = [
@@ -1528,17 +1520,6 @@ dependencies = [
  "tracing",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "packdb-core"
-version = "0.2.0"
-dependencies = [
- "http",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]
