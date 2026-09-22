@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Prepared `packdb-core`, `packdb-api`, `packdb-otel`, and `packdb-client` as a
-  standalone Apache-2.0 workspace.
+- Prepared `packdb-otel` and `packdb-client` as a standalone Apache-2.0 workspace.
+- Excluded unreferenced server primitives and duplicate protocol response DTOs.
 - Removed control-plane, tenancy, authentication issuance, placement, routing,
   quota, reliability administration, and other commercial service contracts from
   the public dependency closure.

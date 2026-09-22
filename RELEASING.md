@@ -19,7 +19,7 @@ during private staging. Repository visibility does not make crates.io private.
 
 Publication requires a separate reviewed change that enables only an explicit
 package allowlist and configures registry ownership. Publish dependencies in this
-order: `packdb-core`, `packdb-api`, `packdb-otel`, then `packdb-client`. Wait for each
+order: `packdb-otel`, then `packdb-client`. Wait for each
 crate to become available, verify its registry checksum, and perform a clean consumer
 build before publishing the next. Never overwrite or blindly retry a version.
 

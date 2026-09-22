@@ -1,18 +1,17 @@
 # PackDB SDK
 
 Rust libraries for building clients and integrations against PackDB's public
-single-node query surfaces. This workspace contains four independently versioned
+single-node query surfaces. This workspace contains two independently versioned
 packages:
 
 | Package | Scope |
 | --- | --- |
-| `packdb-core` | Build identity, request IDs, public-origin validation, service outcomes and orderly shutdown helpers |
-| `packdb-api` | Generic response envelopes and Prometheus/Loki response types |
 | `packdb-otel` | Protocol-neutral W3C trace-context propagation for HTTP and gRPC |
 | `packdb-client` | SQL over HTTP or Flight SQL, output formatting, caller-supplied credentials and client errors |
 
-Control-plane access, credential issuance, tenant resolution, admission, placement,
-routing and other commercial service contracts are outside this repository.
+Server lifecycle/build primitives, duplicate wire DTOs, control-plane access,
+credential issuance, tenant resolution, admission, placement, routing and other
+commercial service contracts are outside this repository.
 
 ## Status and use
 

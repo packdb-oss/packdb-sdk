@@ -25,11 +25,28 @@ use opentelemetry::propagation::{Extractor, Injector, TextMapCompositePropagator
 use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
 use tonic::metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue};
 
+// W3C Baggage limits. Enforce these before the 0.31 propagator parses an
+// attacker-controlled value; GHSA-w9wp-h8wv-79jx fixed the same unbounded
+// allocation by adding these two limits upstream in opentelemetry_sdk 0.32.1.
+const MAX_BAGGAGE_LENGTH: usize = 8192;
+const MAX_BAGGAGE_ITEMS: usize = 64;
+
+fn bounded_header_value<'a>(key: &str, value: Option<&'a str>) -> Option<&'a str> {
+    let value = value?;
+    if key.eq_ignore_ascii_case("baggage")
+        && (value.len() > MAX_BAGGAGE_LENGTH
+            || value.split(',').take(MAX_BAGGAGE_ITEMS + 1).count() > MAX_BAGGAGE_ITEMS)
+    {
+        return None;
+    }
+    Some(value)
+}
+
 struct HeaderMapExtractor<'a>(&'a HeaderMap);
 
 impl Extractor for HeaderMapExtractor<'_> {
     fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|value| value.to_str().ok())
+        bounded_header_value(key, self.0.get(key).and_then(|value| value.to_str().ok()))
     }
 
     fn keys(&self) -> Vec<&str> {
@@ -54,7 +71,7 @@ struct MetadataExtractor<'a>(&'a MetadataMap);
 
 impl Extractor for MetadataExtractor<'_> {
     fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|value| value.to_str().ok())
+        bounded_header_value(key, self.0.get(key).and_then(|value| value.to_str().ok()))
     }
 
     fn keys(&self) -> Vec<&str> {
@@ -116,6 +133,7 @@ pub fn inject_grpc_context(context: &Context, metadata: &mut MetadataMap) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opentelemetry::baggage::BaggageExt;
     use opentelemetry::trace::TraceContextExt;
     use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 
@@ -154,6 +172,61 @@ mod tests {
                 .span_context()
                 .trace_id(),
             context().span().span_context().trace_id()
+        );
+    }
+
+    #[test]
+    fn oversized_baggage_is_dropped_before_propagator_parsing() {
+        install_w3c_propagator();
+        let oversized = format!("key={}", "x".repeat(MAX_BAGGAGE_LENGTH));
+
+        let mut headers = HeaderMap::new();
+        headers.insert("baggage", oversized.parse().expect("valid HTTP header"));
+        assert_eq!(extract_http_context(&headers).baggage().len(), 0);
+
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            "baggage",
+            oversized.parse().expect("valid gRPC metadata value"),
+        );
+        assert_eq!(extract_grpc_context(&metadata).baggage().len(), 0);
+    }
+
+    #[test]
+    fn excessive_baggage_items_are_dropped_before_propagator_parsing() {
+        install_w3c_propagator();
+        let excessive = (0..=MAX_BAGGAGE_ITEMS)
+            .map(|index| format!("k{index}=v"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(excessive.len() <= MAX_BAGGAGE_LENGTH);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("baggage", excessive.parse().expect("valid HTTP header"));
+        assert_eq!(extract_http_context(&headers).baggage().len(), 0);
+
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            "baggage",
+            excessive.parse().expect("valid gRPC metadata value"),
+        );
+        assert_eq!(extract_grpc_context(&metadata).baggage().len(), 0);
+    }
+
+    #[test]
+    fn baggage_at_the_item_limit_is_still_accepted() {
+        install_w3c_propagator();
+        let bounded = (0..MAX_BAGGAGE_ITEMS)
+            .map(|index| format!("k{index}=v"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(bounded.len() <= MAX_BAGGAGE_LENGTH);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("baggage", bounded.parse().expect("valid HTTP header"));
+        assert_eq!(
+            extract_http_context(&headers).baggage().len(),
+            MAX_BAGGAGE_ITEMS
         );
     }
 }

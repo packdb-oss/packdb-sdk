@@ -11,7 +11,7 @@ readonly CARGO_LLVM_COV_VERSION="0.9.1"
 readonly CARGO_AUDIT_VERSION="0.22.2"
 readonly CARGO_DENY_VERSION="0.20.2"
 readonly GITLEAKS_VERSION="v8.30.1"
-readonly PACKAGES=(packdb-core packdb-api packdb-otel packdb-client)
+readonly PACKAGES=(packdb-otel packdb-client)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -132,8 +132,6 @@ feature_matrix() {
     cargo "+$toolchain" test --locked --workspace --lib --no-default-features
     cargo "+$toolchain" test --locked --workspace --all-targets --all-features
     cargo "+$toolchain" test --locked --workspace --doc --all-features
-    cargo "+$toolchain" test --locked -p packdb-core --lib --no-default-features
-    cargo "+$toolchain" test --locked -p packdb-core --lib --features service-lifecycle
     cargo "+$toolchain" test --locked -p packdb-client --lib --no-default-features
     cargo "+$toolchain" test --locked -p packdb-client --all-targets --features sql
     cargo "+$toolchain" test --locked -p packdb-client --all-targets --features flight-sql
@@ -195,6 +193,15 @@ cmd_security() {
     cargo tree -i paste --locked --all-features --prefix none |
         grep -Fx "arrow-flight v58.4.0" >/dev/null ||
         die "RUSTSEC-2024-0436 scope changed; review or remove the exception"
+    # GHSA-w9wp-h8wv-79jx affects the upstream 0.31.0 baggage parser. The
+    # HTTP and gRPC extractors bound untrusted input to the patched upstream
+    # limits (8 KiB and 64 entries) before calling it. Remove this exception
+    # on an OpenTelemetry upgrade or by 2026-12-31, whichever comes first.
+    [[ "$(date -u +%Y-%m-%d)" < "2027-01-01" ]] ||
+        die "GHSA-w9wp-h8wv-79jx exception expired; upgrade OpenTelemetry"
+    cargo tree -i opentelemetry_sdk --locked --all-features --prefix none |
+        grep -Fx "opentelemetry_sdk v0.31.0" >/dev/null ||
+        die "GHSA-w9wp-h8wv-79jx scope changed; review or remove the exception"
     cargo audit --deny warnings --ignore RUSTSEC-2024-0436
     cargo deny --locked --all-features check licenses bans sources
     if ! command -v gitleaks >/dev/null 2>&1; then
@@ -204,7 +211,7 @@ cmd_security() {
         export PATH="$HOME/.local/bin:$PATH"
     fi
     local installed
-    installed="v$(gitleaks version 2>/dev/null | sed -E 's/^v//')"
+    installed="$(scripts/gitleaks-version.sh "$(command -v gitleaks)")"
     [[ "$installed" == "$GITLEAKS_VERSION" ]] ||
         die "gitleaks is '${installed:-unknown}', expected $GITLEAKS_VERSION"
     if [[ "$s" == full ]]; then
@@ -270,7 +277,7 @@ import json, subprocess, sys
 sha, version, run_id, attempt = sys.argv[1:5]
 print(json.dumps({
     "repository": "packdb-sdk",
-    "packages": ["packdb-core", "packdb-api", "packdb-otel", "packdb-client"],
+    "packages": ["packdb-otel", "packdb-client"],
     "version": version,
     "source_sha": sha,
     "toolchain": subprocess.run(["rustc", "--version"], capture_output=True, text=True, check=True).stdout.strip(),
