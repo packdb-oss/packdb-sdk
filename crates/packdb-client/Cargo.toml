@@ -14,13 +14,13 @@ publish = false
 
 [dependencies]
 packdb-otel = { version = "0.2.0", path = "../packdb-otel", optional = true }
-arrow = { version = "58.3", features = ["prettyprint", "csv", "json"], optional = true }
-arrow-flight = { version = "58.3", features = ["flight-sql"], optional = true }
+arrow = { version = "60.0", features = ["prettyprint", "csv", "json"], optional = true }
+arrow-flight = { version = "60.0", features = ["flight-sql"], optional = true }
 async-trait = { version = "0.1" }
 base64 = { version = "0.23" }
 futures = { version = "0.3", optional = true }
 http = { version = "1.3", optional = true }
-opentelemetry = { version = "0.31", features = ["trace", "metrics", "logs"], optional = true }
+opentelemetry = { version = "0.33", features = ["trace", "metrics", "logs"], optional = true }
 reqwest = { version = "0.13", features = ["json", "query", "form"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }

@@ -12,8 +12,8 @@ description = "Protocol-neutral W3C trace-context propagation for PackDB clients
 
 [dependencies]
 http = { version = "1.3" }
-opentelemetry = { version = "0.31", features = ["trace", "metrics", "logs"] }
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry = { version = "0.33", features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
 tonic = { version = "0.14", features = ["gzip", "zstd"] }
 
 [lints.rust]

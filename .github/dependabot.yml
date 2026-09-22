@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # These crates share types and traits across package boundaries. A single
+    # major-version bump of one member does not compile with the old peer.
+    groups:
+      arrow-stack:
+        patterns:
+          - arrow
+          - arrow-flight
+      opentelemetry-stack:
+        patterns:
+          - opentelemetry
+          - opentelemetry_sdk
   - package-ecosystem: github-actions
     directory: /
     schedule:

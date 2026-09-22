@@ -18,7 +18,7 @@ reverted by the next regeneration.
 
 | | |
 | --- | --- |
-| source commit | `1c25816956b11f294d1a11901e8f7b97bb0228e1` |
+| source commit | `545fb2f5ddef9346296ee0ef08738f7742925f93` |
 | repository | `packdb-sdk` |
 | members | 2 |
 | files | see `FILE_INVENTORY.txt` |
@@ -38,8 +38,8 @@ reverted by the next regeneration.
    currently expects `0` source edit(s); the denylist
    still scans the complete result when that count is zero.
 3. **Manifests rewritten** so nothing inherits from the monorepo workspace.
-   Every dependency version here is the concrete value that workspace held
-   at the source commit. `Cargo.lock` is then copied from the kit's reviewed
+   Versions come from that workspace except for the reviewed SDK-only
+   dependency map below. `Cargo.lock` is then copied from the kit's reviewed
    copy, after checking it against a fingerprint of these manifests.
 4. **Overlaid** with files that exist only in the export. For this SDK, that
    includes the licence, standalone workspace, toolchain pin, community policy,
@@ -47,6 +47,16 @@ reverted by the next regeneration.
    makes a regenerated repository reproduce its governance and checks too.
 5. **Refused** if any denylisted pattern survives -- internal citations,
    internal crate names, internal hosts, or leftover workspace inheritance.
+
+The SDK uses these reviewed dependency versions independently of the server workspace. The export refuses if a source declaration changes without reviewing this map:
+
+| Dependency | Source workspace | SDK export |
+| --- | --- | --- |
+| `arrow` | `58.3` | `60.0` |
+| `arrow-flight` | `58.3` | `60.0` |
+| `base64` | `0.22` | `0.23` |
+| `opentelemetry` | `0.31` | `0.33` |
+| `opentelemetry_sdk` | `0.31` | `0.33` |
 
 ## Deliberate decisions a reader should not mistake for oversights
 
