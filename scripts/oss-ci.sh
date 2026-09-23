@@ -87,11 +87,18 @@ check_policy() {
     grep -q 'Apache License' LICENSE || die "LICENSE is not the Apache License"
 }
 
+# POSIX classes, not `\s`: BSD grep and sed do not understand `\s`, so on
+# macOS the extraction silently did not strip the `uses:` prefix. The old
+# pattern `^[^@]+@[0-9a-f]{40}$` then matched the UNSTRIPPED line anyway --
+# `[^@]+` happily absorbs "  - uses: actions/checkout" -- so the gate passed
+# for the wrong reason instead of failing loudly. The owner pattern below
+# rejects anything carrying whitespace, so a broken extraction now fails.
 check_action_pins() {
     log "workflow action pins and triggers"
     local bad
-    bad="$(grep -rhoE '^\s*(- )?uses:\s*[^ #]+' .github/workflows |
-        sed -E 's/^\s*(- )?uses:\s*//' | grep -vE '^[^@]+@[0-9a-f]{40}$' || true)"
+    bad="$(grep -rhoE '^[[:space:]]*(- )?uses:[[:space:]]*[^ #]+' .github/workflows |
+        sed -E 's/^[[:space:]]*(- )?uses:[[:space:]]*//' |
+        grep -vE '^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+@[0-9a-f]{40}$' || true)"
     [[ -z "$bad" ]] || die "actions not pinned to a full commit SHA: $bad"
     if grep -rnE 'pull_request_target|workflow_run' .github/workflows; then
         die "privileged workflow trigger is not allowed"
