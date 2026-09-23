@@ -18,8 +18,9 @@ These templates have no effect from this documentation directory.
 
 Require all stable job names in branch rules; do not use path filters that omit
 required checks. Protect main and tags, dismiss stale approvals, require code-owner
-review for workflows/auth/storage, and restrict bypass. Add Dependabot for Cargo and
-GitHub Actions weekly; its PRs pass the same checks. Enable secret scanning/push
+review for workflows/auth/storage, and restrict bypass. Add Dependabot for Cargo
+weekly; its PRs pass the same checks. Review action updates in the monorepo
+export overlay so regeneration preserves them. Enable secret scanning/push
 protection where available, with an equivalent local/CI scan where unavailable.
 
 Run untrusted PR code on disposable GitHub-hosted runners with contents:read,
