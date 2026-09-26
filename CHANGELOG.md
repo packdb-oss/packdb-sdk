@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Prepared `packdb-otel` and `packdb-client` as a standalone Apache-2.0 workspace.
 - Excluded unreferenced server primitives and duplicate protocol response DTOs.
