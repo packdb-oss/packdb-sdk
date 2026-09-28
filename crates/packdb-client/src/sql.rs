@@ -454,15 +454,44 @@ pub async fn execute_sql_http(
     if !response.status().is_success() {
         let status = response.status();
         let body = crate::diagnostics::best_effort_response_body(response).await;
-        return Err(ClientError::ProtocolError(format!(
-            "Server returned status {status}: {body}"
-        )));
+        return Err(classify_http_failure(status, body));
     }
 
     response
         .json::<SqlJsonResponse>()
         .await
         .map_err(ClientError::from)
+}
+
+/// Bodies the server sends with `400 Bad Request` when it rejects the query
+/// itself: `PackDbError::Query` and `PackDbError::Parse` render with these
+/// prefixes. Other 400s -- `Configuration error: ...`, for one -- are not a
+/// statement about the SQL, so the prefix, not the status, identifies a
+/// rejection.
+const SQL_REJECTION_PREFIXES: [&str; 2] = ["Query error:", "Parse error:"];
+
+/// Classify a non-2xx `/api/v1/sql` response into the exit-code taxonomy.
+///
+/// Deliberately narrow: only a response the server identifies as a rejected
+/// query is a [`ClientError::SqlError`] (exit 1), and `401`/`403` are
+/// credential problems, [`ClientError::ConnectionError`] (exit 2). Everything
+/// else -- including every `5xx`, which covers storage failures and
+/// unavailability as well as failed queries -- stays a
+/// [`ClientError::ProtocolError`] (exit 3) until its meaning is established.
+fn classify_http_failure(status: reqwest::StatusCode, body: String) -> ClientError {
+    use reqwest::StatusCode;
+    if status == StatusCode::BAD_REQUEST
+        && SQL_REJECTION_PREFIXES
+            .iter()
+            .any(|prefix| body.starts_with(prefix))
+    {
+        return ClientError::SqlError(body);
+    }
+    let detail = format!("Server returned status {status}: {body}");
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        return ClientError::ConnectionError(detail);
+    }
+    ClientError::ProtocolError(detail)
 }
 
 /// Normalize a slice of Arrow `RecordBatch`es into the same
@@ -1030,5 +1059,98 @@ mod tests {
                 .contains("x-client-request-id: request-123"),
             "caller header must propagate; request was:\n{text}"
         );
+    }
+
+    fn http_response(status_line: &str, body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 {status_line}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    /// The exit-code contract for a non-2xx `/api/v1/sql` response, driven
+    /// through the real HTTP path. Only a 400 whose body the server renders
+    /// as a query or parse rejection is exit 1; 401/403 are exit 2; every
+    /// other response -- a 400 that is not about the SQL, and every 5xx --
+    /// stays exit 3.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_non_success_response_maps_to_the_documented_exit_code() {
+        let cases = [
+            (
+                "400 Bad Request",
+                "Query error: Failed to parse SQL: SQL error: ParserError(\"Expected: an SQL statement, found: INVALID\")",
+                1,
+            ),
+            ("400 Bad Request", "Parse error: unexpected token", 1),
+            ("400 Bad Request", "Configuration error: bad tenant", 3),
+            (
+                "400 Bad Request",
+                "  Query error: leading whitespace is not the server's rendering",
+                3,
+            ),
+            (
+                "401 Unauthorized",
+                "Authentication error: missing credentials",
+                2,
+            ),
+            ("403 Forbidden", "Authentication error: not permitted", 2),
+            ("404 Not Found", "not found", 3),
+            ("429 Too Many Requests", "Scan budget exceeded: too wide", 3),
+            ("500 Internal Server Error", "Storage error: disk full", 3),
+            (
+                "500 Internal Server Error",
+                "Query error: a 500 is not a rejection",
+                3,
+            ),
+            ("503 Service Unavailable", "Unavailable: warming up", 3),
+        ];
+        for (status_line, body, expected) in cases {
+            let (addr, server) = one_shot_server(http_response(status_line, body)).await;
+            let err = client_for(addr)
+                .execute_query("SELECT 1", OutputFormat::Json)
+                .await
+                .expect_err("a non-2xx response is an error");
+            assert_eq!(
+                err.exit_code(),
+                expected,
+                "{status_line} {body:?} classified as {err:?}"
+            );
+            assert!(
+                err.to_string().contains(body.trim()),
+                "the server's message must reach the user: {err}"
+            );
+            server.await.ok();
+        }
+    }
+
+    /// With Flight SQL compiled in and an endpoint that cannot be reached,
+    /// the client falls back to HTTP; a query the server then rejects must
+    /// still be exit 1, not the Flight failure's class.
+    #[cfg(feature = "flight-sql")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_rejection_after_flight_fallback_is_still_exit_one() {
+        let closed = StdTcpListener::bind("127.0.0.1:0").expect("bind");
+        let flight_addr = closed.local_addr().expect("local addr");
+        drop(closed);
+        let (addr, server) = one_shot_server(http_response(
+            "400 Bad Request",
+            "Query error: Failed to parse SQL",
+        ))
+        .await;
+        let client = SqlClient::new(SqlClientConfig {
+            url: format!("http://{addr}"),
+            flight_url: Some(format!("http://{flight_addr}")),
+            auth: Arc::new(crate::credentials::NoAuth),
+            timeout: Duration::from_secs(2),
+            http_only: false,
+        });
+        let err = client
+            .execute_query("INVALID SQL SYNTAX", OutputFormat::Json)
+            .await
+            .expect_err("rejected");
+        assert!(matches!(err, ClientError::SqlError(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 1);
+        server.await.ok();
     }
 }
