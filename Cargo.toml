@@ -1,14 +1,8 @@
 # Standalone workspace for the PackDB Rust SDK.
 #
-# This repository is an export: its sources are assembled deterministically
-# from a pinned PackDB commit, recorded in EXPORT_MANIFEST.md. It is not a
-# fork and it is not edited in place — a change belongs upstream, and reaches
-# here by regenerating the export.
-#
-# Unlike the monorepo it came from, this workspace inherits nothing. Most
-# dependency versions come from the pinned source commit; the reviewed SDK-only
-# version map in the export kit can advance client dependencies independently
-# of the server's Arrow and OpenTelemetry stack.
+# This repository is the canonical source of these crates; changes are made
+# here. It began as an export from the PackDB monorepo (see EXPORT_MANIFEST.md)
+# and inherits nothing from it: every dependency version is declared here.
 
 [workspace]
 resolver = "3"
