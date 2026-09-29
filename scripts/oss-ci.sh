@@ -152,6 +152,7 @@ cmd_checks() {
     changed_files "$changed"
     check_policy
     check_action_pins
+    python3 scripts/check_action_pins.py --self-test
     python3 scripts/export_clean.py
     python3 scripts/coverage_gate.py --self-test
     cargo fmt --all -- --check

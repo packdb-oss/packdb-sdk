@@ -16,3 +16,10 @@ updates:
         patterns:
           - opentelemetry
           - opentelemetry_sdk
+  # Workflow action pins. These workflows are authored in this repository, so
+  # Dependabot keeps their SHA pins and same-line version comments current;
+  # oss-action-pin-watch checks every pin weekly.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
