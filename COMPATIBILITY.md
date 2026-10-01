@@ -16,6 +16,15 @@ Every release gate exercises no-default and all-feature builds. Compatibility ga
 also test `packdb-client` separately with `sql` and `flight-sql` so feature
 unification cannot hide a broken configuration.
 
+## Query completeness in 0.2.2
+
+`QueryResponse<T>` and the completeness-preserving SQL methods are additive.
+Existing row-only and formatted-output methods retain their signatures and error
+classification. The new methods report causes from the answering HTTP response
+or Flight DoGet initial metadata; absent carriers mean complete, and present
+empty or unreadable carriers remain partial. Failed Flight attempts do not add
+causes to a successful HTTP fallback response.
+
 ## Exclusions
 
 The SDK transports credentials supplied by its caller. It does not ship server
