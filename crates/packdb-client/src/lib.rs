@@ -24,6 +24,9 @@ pub mod diagnostics;
 pub mod error;
 pub mod outcome;
 
+pub mod completeness;
+pub use completeness::{QueryResponse, partial_causes_of};
+
 pub mod credentials;
 
 #[cfg(feature = "sql")]

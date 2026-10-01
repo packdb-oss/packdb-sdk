@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `QueryResponse` and `SqlClient::execute_query_rows_with_completeness` to
+  retain `x-packdb-partial-causes` from HTTP headers or Flight SQL DoGet initial
+  metadata. Empty and malformed carriers fail closed. HTTP fallback retains
+  only the answering response's causes. Existing row-only methods are unchanged.
+
 ## 0.2.1
 
 - `packdb-client`: a query the server rejects over HTTP (`400` with a
