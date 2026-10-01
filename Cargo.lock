@@ -1503,6 +1503,7 @@ dependencies = [
  "http",
  "opentelemetry",
  "packdb-otel",
+ "prost",
  "reqwest",
  "serde",
  "serde_json",
