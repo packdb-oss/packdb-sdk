@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
 - Add `QueryResponse` and `SqlClient::execute_query_rows_with_completeness` to
   retain `x-packdb-partial-causes` from HTTP headers or Flight SQL DoGet initial
   metadata. Empty and malformed carriers fail closed. HTTP fallback retains
   only the answering response's causes. Existing row-only methods are unchanged.
+- Replace the yanked `yoke-derive 0.8.3` lockfile entry with `0.8.4`.
+- Update pinned CI actions, add Dependabot and scheduled action-pin checks, and
+  record this repository as the canonical source of the SDK.
 
 ## 0.2.1
 

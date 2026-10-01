@@ -1,6 +1,6 @@
 [package]
 name = "packdb-client"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.94.1"
 description = "PackDB SQL client, output formats, and caller-supplied credential transport."
@@ -13,7 +13,7 @@ repository = "https://github.com/packdb-oss/packdb-sdk"
 publish = false
 
 [dependencies]
-packdb-otel = { version = "0.2.1", path = "../packdb-otel", optional = true }
+packdb-otel = { version = "0.2.2", path = "../packdb-otel", optional = true }
 arrow = { version = "60.0", features = ["prettyprint", "csv", "json"], optional = true }
 arrow-flight = { version = "60.0", features = ["flight-sql"], optional = true }
 async-trait = { version = "0.1" }
