@@ -14,6 +14,7 @@
 
 //! SQL client abstraction for Flight SQL and HTTP backends
 
+use crate::completeness::{QueryResponse, partial_causes_of};
 use crate::credentials::AuthProvider;
 use crate::error::{ClientError, ClientResult};
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, StringArray};
@@ -127,7 +128,10 @@ impl SqlClient {
     /// Returns `ClientError::ProtocolError` if server returns invalid response
     /// Returns `ClientError::SqlError` if query execution fails
     pub async fn execute_query(&self, sql: &str, format: OutputFormat) -> ClientResult<String> {
-        let rows = self.execute_query_rows_inner(sql, HeaderMap::new()).await?;
+        let rows = self
+            .execute_query_rows_inner(sql, HeaderMap::new())
+            .await?
+            .data;
         match format {
             OutputFormat::Json => format_json(&rows),
             OutputFormat::Table => format_table(&rows),
@@ -158,7 +162,10 @@ impl SqlClient {
     ///
     /// Same taxonomy as [`Self::execute_query`].
     pub async fn execute_query_rows(&self, sql: &str) -> ClientResult<Vec<serde_json::Value>> {
-        self.execute_query_rows_inner(sql, HeaderMap::new()).await
+        Ok(self
+            .execute_query_rows_inner(sql, HeaderMap::new())
+            .await?
+            .data)
     }
 
     /// Variant of [`Self::execute_query_rows`] that lets the
@@ -181,6 +188,27 @@ impl SqlClient {
         sql: &str,
         extra_headers: HeaderMap,
     ) -> ClientResult<Vec<serde_json::Value>> {
+        Ok(self
+            .execute_query_rows_inner(sql, extra_headers)
+            .await?
+            .data)
+    }
+
+    /// Execute a query and preserve upstream completeness with its rows.
+    ///
+    /// Request headers and fallback follow [`Self::execute_query_rows_with_headers`].
+    /// Causes come from the transport that answered: HTTP response headers or
+    /// Flight SQL DoGet initial metadata. A failed Flight attempt contributes
+    /// no causes to the HTTP fallback's answer.
+    ///
+    /// # Errors
+    ///
+    /// Same taxonomy as [`Self::execute_query`].
+    pub async fn execute_query_rows_with_completeness(
+        &self,
+        sql: &str,
+        extra_headers: HeaderMap,
+    ) -> ClientResult<QueryResponse<Vec<serde_json::Value>>> {
         self.execute_query_rows_inner(sql, extra_headers).await
     }
 
@@ -191,7 +219,7 @@ impl SqlClient {
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<Vec<serde_json::Value>> {
+    ) -> ClientResult<QueryResponse<Vec<serde_json::Value>>> {
         #[cfg(feature = "flight-sql")]
         if !self.config.http_only
             && let Some(ref flight_url) = self.config.flight_url
@@ -200,7 +228,12 @@ impl SqlClient {
                 .execute_flight_query(sql, flight_url, &extra_headers)
                 .await
             {
-                Ok(batches) => return batches_to_json_rows(&batches),
+                Ok(response) => {
+                    return Ok(QueryResponse {
+                        data: batches_to_json_rows(&response.data)?,
+                        partial_causes: response.partial_causes,
+                    });
+                }
                 Err(e) => {
                     tracing::debug!("Flight SQL failed, falling back to HTTP: {e}");
                 }
@@ -216,7 +249,7 @@ impl SqlClient {
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<Vec<serde_json::Value>> {
+    ) -> ClientResult<QueryResponse<Vec<serde_json::Value>>> {
         let client = reqwest::Client::builder()
             .timeout(self.config.timeout)
             .build()
@@ -239,8 +272,9 @@ impl SqlClient {
             .await
             .map_err(|e| ClientError::ConfigError(format!("auth provider failed: {e}")))?;
 
-        let response = execute_sql_http(&client, &self.config.url, sql, headers).await?;
-        Ok(response.rows)
+        let response =
+            execute_sql_http_with_completeness(&client, &self.config.url, sql, headers).await?;
+        Ok(response.map(|answer| answer.rows))
     }
 
     /// Execute query via Flight SQL protocol
@@ -250,7 +284,7 @@ impl SqlClient {
         sql: &str,
         flight_url: &str,
         extra_headers: &HeaderMap,
-    ) -> ClientResult<Vec<RecordBatch>> {
+    ) -> ClientResult<QueryResponse<Vec<RecordBatch>>> {
         let endpoint = Endpoint::from_shared(flight_url.to_string())
             .map_err(|e| ClientError::ConfigError(format!("Invalid flight URL: {e}")))?
             .timeout(self.config.timeout);
@@ -308,12 +342,22 @@ impl SqlClient {
             .await
             .map_err(|e| ClientError::ProtocolError(format!("Flight do_get failed: {e}")))?;
 
+        let partial_causes = crate::completeness::parse_partial_causes(
+            stream
+                .headers()
+                .get_all(crate::completeness::PARTIAL_CAUSES_HEADER)
+                .iter()
+                .map(|value| value.to_str().ok()),
+        );
         let batches: Vec<RecordBatch> = stream
             .try_collect()
             .await
             .map_err(|e| ClientError::ProtocolError(format!("Flight stream error: {e}")))?;
 
-        Ok(batches)
+        Ok(QueryResponse {
+            data: batches,
+            partial_causes,
+        })
     }
 
     /// Apply authentication to the Flight SQL client via the
@@ -430,6 +474,24 @@ pub async fn execute_sql_http(
     sql: &str,
     headers: reqwest::header::HeaderMap,
 ) -> ClientResult<SqlJsonResponse> {
+    Ok(
+        execute_sql_http_with_completeness(http, base_url, sql, headers)
+            .await?
+            .data,
+    )
+}
+
+/// Execute HTTP SQL and preserve the response's completeness carrier.
+///
+/// # Errors
+///
+/// Same taxonomy as [`execute_sql_http`].
+pub async fn execute_sql_http_with_completeness(
+    http: &reqwest::Client,
+    base_url: &str,
+    sql: &str,
+    headers: HeaderMap,
+) -> ClientResult<QueryResponse<SqlJsonResponse>> {
     // Tolerate callers that pass the full endpoint path
     // (`http://host:4000/api/v1/sql`) AND callers that pass a bare
     // origin. The evaluator and the CLI both historically accepted
@@ -457,10 +519,12 @@ pub async fn execute_sql_http(
         return Err(classify_http_failure(status, body));
     }
 
-    response
-        .json::<SqlJsonResponse>()
-        .await
-        .map_err(ClientError::from)
+    let partial_causes = partial_causes_of(response.headers());
+    let data = response.json::<SqlJsonResponse>().await?;
+    Ok(QueryResponse {
+        data,
+        partial_causes,
+    })
 }
 
 /// Bodies the server sends with `400 Bad Request` when it rejects the query
