@@ -30,7 +30,7 @@ until the launch implementation is reviewed. Do not use `pull_request_target` or
 `workflow_run` for publication.
 
 Before public visibility, review reachable history, Actions artifacts and private
-release attachments; verify security and conduct contacts; name a second maintainer;
+release attachments; verify security and conduct contacts; record the release-owner review;
 and document registry recovery. Describe capabilities and observed limitations
 without maturity or production-quality claims. “Used in production” describes use
 only and provides no quality, HA, fitness, support, or commercial guarantee.

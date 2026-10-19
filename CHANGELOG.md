@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3
+
+- Redact API keys, bearer tokens, basic-auth credentials and nested credential
+  providers from Debug output. Request authentication behavior is unchanged.
+- Update the locked Rustls dependency to 0.23.46, resolving
+  RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0348 and RUSTSEC-2026-0349.
+- Support single-maintainer public operation with recorded reviews and passing
+  checks. Pin candidate qualification to Ubuntu 24.04 for Python compatibility.
+
 ## 0.2.2
 
 - Add `QueryResponse` and `SqlClient::execute_query_rows_with_completeness` to
