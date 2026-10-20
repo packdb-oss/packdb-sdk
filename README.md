@@ -15,10 +15,10 @@ commercial service contracts are outside this repository.
 
 ## Status and use
 
-The packages are staged privately and are not published to crates.io. Every manifest
-keeps `publish = false`; changing that is a separate reviewed release action. Until a
-public release exists, this repository is source and candidate evidence rather than a
-supported registry installation channel.
+Source releases are available from [GitHub Releases](https://github.com/packdb-oss/packdb-sdk/releases).
+The packages are not published to crates.io. Every manifest keeps `publish = false`;
+registry publication is a separate reviewed release action and does not follow
+automatically from repository visibility. Use a source checkout for development.
 
 The crates use Rust 1.94.1 and edition 2024. `packdb-client` has no default features:
 `sql` enables HTTP SQL support, and `flight-sql` includes `sql` plus Flight SQL.
