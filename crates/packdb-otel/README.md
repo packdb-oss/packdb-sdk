@@ -10,9 +10,9 @@ their telemetry providers.
 
 ## Status
 
-Part of the [PackDB](https://packdb.io) workspace. **Not published to
-crates.io**, and `publish = false` in its manifest while the open-source
-repository is staged privately.
+Part of the [PackDB SDK](https://github.com/packdb-oss/packdb-sdk) workspace.
+Not published to crates.io; the manifest keeps `publish = false` until registry
+publication is approved. Depend on this crate by path within a source checkout.
 
 ## Licence
 
