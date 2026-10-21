@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.4
+
+- Replace the LICENSE files (repository root, `packdb-client` and `packdb-otel`)
+  with the verbatim Apache License 2.0 text. Earlier releases shipped an altered
+  text: the Trademarks clause (section 6) was missing, sections 7 to 9 were
+  renumbered 6 to 8, the copyright grant wording differed, and section 9 was
+  retitled. The crates' licensing (Apache-2.0, as declared in `Cargo.toml` and
+  the source headers) is unchanged. Earlier release archives keep their original
+  text; this release supersedes them.
+- Update the locked `rustls-webpki` to 0.103.16 and `webpki-root-certs` to
+  1.0.10, resolving RUSTSEC-2026-0382 and RUSTSEC-2026-0383. This covers this
+  repository's own builds and release archives only: Cargo does not apply a
+  library's lockfile to its dependents. Applications that depend on these crates
+  must update their own `Cargo.lock` to `rustls-webpki` 0.103.16 or later and
+  `webpki-root-certs` 1.0.10 or later, for example with
+  `cargo update -p rustls-webpki -p webpki-root-certs`.
+- No public API or wire-format changes.
+
 ## 0.2.3
 
 - Redact API keys, bearer tokens, basic-auth credentials and nested credential
