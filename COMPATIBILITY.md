@@ -16,6 +16,12 @@ Every release gate exercises no-default and all-feature builds. Compatibility ga
 also test `packdb-client` separately with `sql` and `flight-sql` so feature
 unification cannot hide a broken configuration.
 
+## Credential diagnostics in 0.2.3
+
+Debug output redacts credentials, including through AuthConfig and its provider.
+The request headers and credential precedence are unchanged. Debug text is not a
+wire-format compatibility contract.
+
 ## Query completeness in 0.2.2
 
 `QueryResponse<T>` and the completeness-preserving SQL methods are additive.
