@@ -47,6 +47,9 @@ packdb-client = { path = "../packdb-sdk/crates/packdb-client", features = ["sql"
 tokio = { version = "1.49", features = ["macros", "rt-multi-thread"] }
 ```
 
+The path must point to the `v0.2.4` checkout above. A path dependency does not pin
+a Git revision; do not substitute an older or modified SDK checkout.
+
 Use this as `src/main.rs`:
 
 ```rust
