@@ -20,6 +20,10 @@ Part of the [PackDB SDK](https://github.com/packdb-oss/packdb-sdk) workspace.
 Not published to crates.io; the manifest keeps `publish = false` until registry
 publication is approved. Depend on this crate by path within a source checkout.
 
+See the [HTTP query quickstart](../../README.md#quickstart-query-over-http) for a
+pinned checkout, application dependencies, environment-based credentials, and a
+first query that preserves and checks partial-result causes.
+
 ## Licence
 
 Apache-2.0. See [`LICENSE`](../../LICENSE) at the workspace root.
