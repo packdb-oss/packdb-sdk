@@ -1,4 +1,4 @@
-// Copyright 2025 PackDb Contributors
+// Copyright 2025 PackDB Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -60,12 +60,20 @@ impl AuthProvider for NoAuth {
 ///
 /// This provider only transports the supplied credential; issuance and validation
 /// belong to the endpoint and its credential authority.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BearerToken {
     /// Pre-formatted `Bearer <token>` value. Kept formatted so the
     /// hot path is a single header insert with no per-call string
     /// allocation.
     formatted: String,
+}
+
+impl std::fmt::Debug for BearerToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BearerToken")
+            .field("formatted", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl BearerToken {
@@ -104,6 +112,15 @@ impl AuthProvider for BearerToken {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_redacts_static_bearer_credentials() {
+        let token = BearerToken::new("static-bearer-sentinel-593").expect("valid header");
+        let text = format!("{token:?}");
+        assert!(text.contains("[REDACTED]"));
+        assert!(!text.contains("static-bearer-sentinel-593"));
+        assert!(!text.contains("Bearer static-bearer-sentinel-593"));
+    }
 
     #[tokio::test]
     async fn noauth_leaves_headers_empty() {

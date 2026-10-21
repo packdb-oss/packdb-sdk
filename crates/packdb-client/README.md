@@ -16,9 +16,13 @@ placement, and routing live in private commercial crates.
 
 ## Status
 
-Part of the [PackDB](https://packdb.io) workspace. **Not published to
-crates.io**, and `publish = false` in its manifest while its open-source
-repository is staged privately. Depend on it by path within this workspace.
+Part of the [PackDB SDK](https://github.com/packdb-oss/packdb-sdk) workspace.
+Not published to crates.io; the manifest keeps `publish = false` until registry
+publication is approved. Depend on this crate by path within a source checkout.
+
+See the [HTTP query quickstart](../../README.md#quickstart-query-over-http) for a
+pinned checkout, application dependencies, environment-based credentials, and a
+first query that preserves and checks partial-result causes.
 
 ## Licence
 

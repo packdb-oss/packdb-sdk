@@ -27,10 +27,9 @@ protection where available, with an equivalent local/CI scan where unavailable.
 Run untrusted PR code on disposable GitHub-hosted runners with contents:read,
 no secrets and persist-credentials:false. No `pull_request_target`, privileged
 workflow_run, self-hosted runner, or AI bot with write tokens for PR execution.
-External Actions are pinned to full commit SHAs resolved from the official v4 tags
-on 2026-09-17. Review those revisions before activation and preserve immutable pins
-on updates. Set timeouts, bounded
-artifact retention, and inspect workflow changes like production code.
+External Actions are pinned to immutable full commit SHAs. Review each revision
+and its upstream release when updating a pin. Set timeouts, bounded artifact
+retention, and inspect workflow changes like production code.
 
 ## Repository adapters required before activation
 
@@ -127,8 +126,8 @@ are orchestration contracts, not a claim those uncreated repositories passed CI.
 ## Environment and release configuration
 
 Create `private-candidate` and `public-release` environments. Public-release needs
-an independent reviewer, main-only deployment rules and scoped credentials/OIDC
-trust. Verify enforcement on the organization's private-repo plan. Keep repository
+a named release-owner review, main-only deployment rules and scoped credentials/OIDC
+trust. A sole maintainer may perform this review; independent review is welcome. Verify enforcement on the organization's private-repo plan. Keep repository
 variable `OSS_PUBLIC_RELEASE_ENABLED` absent or `false` until launch. Its presence
 is not a substitute for the environment review and SHA-bound release record.
 
