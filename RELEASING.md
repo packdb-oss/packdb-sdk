@@ -1,7 +1,8 @@
 # Releasing
 
 Only named release maintainers may publish. Every package remains `publish = false`
-during private staging. Repository visibility does not make crates.io private.
+until registry publication is explicitly enabled and qualified. Repository visibility,
+GitHub releases and crates.io publication are separate decisions; crates.io is public.
 
 ## Private candidates
 
@@ -30,7 +31,7 @@ until the launch implementation is reviewed. Do not use `pull_request_target` or
 `workflow_run` for publication.
 
 Before public visibility, review reachable history, Actions artifacts and private
-release attachments; verify security and conduct contacts; name a second maintainer;
+release attachments; verify security and conduct contacts; record the release-owner review;
 and document registry recovery. Describe capabilities and observed limitations
 without maturity or production-quality claims. “Used in production” describes use
 only and provides no quality, HA, fitness, support, or commercial guarantee.

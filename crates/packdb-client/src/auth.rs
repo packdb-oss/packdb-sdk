@@ -17,7 +17,7 @@
 use crate::error::{ClientError, ClientResult};
 
 /// Authentication method for client connections
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum AuthMethod {
     /// No authentication
     None,
@@ -35,6 +35,21 @@ pub enum AuthMethod {
         /// Password sent in the `Authorization: Basic` credential.
         password: String,
     },
+}
+
+impl std::fmt::Debug for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::ApiKey(_) => f.debug_tuple("ApiKey").field(&"[REDACTED]").finish(),
+            Self::BearerToken(_) => f.debug_tuple("BearerToken").field(&"[REDACTED]").finish(),
+            Self::BasicAuth { .. } => f
+                .debug_struct("BasicAuth")
+                .field("username", &"[REDACTED]")
+                .field("password", &"[REDACTED]")
+                .finish(),
+        }
+    }
 }
 
 /// Authentication configuration
@@ -212,6 +227,36 @@ impl crate::credentials::AuthProvider for AuthConfigProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_redacts_credentials_through_config_and_provider() {
+        let cases = [
+            (
+                AuthConfig::api_key("api-sentinel-137".into()),
+                "api-sentinel-137",
+            ),
+            (
+                AuthConfig::bearer_token("bearer-sentinel-251".into()),
+                "bearer-sentinel-251",
+            ),
+            (
+                AuthConfig::basic_auth("user-sentinel-389".into(), "pass-sentinel-463".into()),
+                "pass-sentinel-463",
+            ),
+        ];
+        for (config, secret) in cases {
+            for text in [
+                format!("{:?}", config.method),
+                format!("{config:?}"),
+                format!("{:?}", config.into_provider()),
+            ] {
+                assert!(text.contains("[REDACTED]"));
+                assert!(!text.contains(secret));
+                assert!(!text.contains("user-sentinel-389"));
+            }
+        }
+        assert_eq!(format!("{:?}", AuthMethod::None), "None");
+    }
 
     #[test]
     fn test_auth_methods() {
