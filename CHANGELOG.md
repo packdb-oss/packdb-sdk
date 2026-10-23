@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Breaking: `ClientError` is `#[non_exhaustive]` and distinguishes
+  `Unauthenticated` (401) and `PermissionDenied` (403), which were
+  `ConnectionError`. Flight SQL errors keep their gRPC status meaning.
+- Breaking: `SqlClientConfig::http_only` is replaced by `transport:
+  SqlTransport` (`Auto`, `Http`, `FlightSql`). An explicit transport never falls
+  back. `Auto` falls back to HTTP only when the Flight SQL connection could not be
+  opened before any request was sent, not after a failure part-way through a
+  query.
+- Add `SqlClient::execute_query_rows_with_transport`, returning `RowsAnswer`
+  with the transport that answered and any fallback reason.
+- Deprecate `ClientError::exit_code`.
+
 ## 0.2.4
 
 - Replace the LICENSE files (repository root, `packdb-client` and `packdb-otel`)

@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Completeness across HTTP, Flight, and stream-failure fallback.
+//! Completeness across HTTP and Flight, and the bounded Flight-to-HTTP fallback.
 #![cfg(feature = "sql")]
 
-use packdb_client::{SqlClient, SqlClientConfig, credentials::NoAuth};
+use packdb_client::{SqlClient, SqlClientConfig, SqlTransport, credentials::NoAuth};
 use reqwest::header::HeaderMap;
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
@@ -30,7 +30,7 @@ fn client(url: String, flight_url: Option<String>) -> SqlClient {
         flight_url,
         auth: Arc::new(NoAuth),
         timeout: Duration::from_secs(2),
-        http_only: false,
+        transport: SqlTransport::Auto,
     })
 }
 
@@ -91,6 +91,7 @@ mod flight {
     struct Stub {
         carrier: Option<&'static str>,
         fail_stream: bool,
+        refuse_info: Option<tonic::Code>,
     }
 
     #[tonic::async_trait]
@@ -101,6 +102,9 @@ mod flight {
             _: CommandStatementQuery,
             _: Request<FlightDescriptor>,
         ) -> Result<Response<FlightInfo>, Status> {
+            if let Some(code) = self.refuse_info {
+                return Err(Status::new(code, "refused by the stub"));
+            }
             let ticket = Ticket {
                 ticket: TicketStatementQuery {
                     statement_handle: "test".into(),
@@ -177,7 +181,7 @@ mod flight {
     }
 
     #[tokio::test]
-    async fn initial_metadata_survives_flight_and_stream_failures_fall_back() {
+    async fn flight_initial_metadata_carries_completeness() {
         for carrier in [
             None,
             Some("tier_scan_failed, cold_tier_unavailable"),
@@ -188,6 +192,7 @@ mod flight {
             let (url, shutdown, task) = start(Stub {
                 carrier,
                 fail_stream: false,
+                refuse_info: None,
             })
             .await;
             let result = client(http.uri(), Some(url))
@@ -210,34 +215,101 @@ mod flight {
             shutdown.send(()).unwrap();
             task.await.unwrap();
         }
-        for carrier in [None, Some("cold_tier_unavailable")] {
+    }
+
+    /// Once Flight SQL has accepted the query, nothing falls back to HTTP: a
+    /// stream that fails part-way and a request the server refuses are both
+    /// returned as errors, with their gRPC meaning kept.
+    #[tokio::test]
+    async fn no_fallback_after_submission() {
+        for (stub, expected) in [
+            (
+                Stub {
+                    carrier: Some("failed_attempt_only"),
+                    fail_stream: true,
+                    refuse_info: None,
+                },
+                "ConnectionError",
+            ),
+            (
+                Stub {
+                    carrier: None,
+                    fail_stream: false,
+                    refuse_info: Some(tonic::Code::Unauthenticated),
+                },
+                "Unauthenticated",
+            ),
+            (
+                Stub {
+                    carrier: None,
+                    fail_stream: false,
+                    refuse_info: Some(tonic::Code::PermissionDenied),
+                },
+                "PermissionDenied",
+            ),
+            (
+                Stub {
+                    carrier: None,
+                    fail_stream: false,
+                    refuse_info: Some(tonic::Code::InvalidArgument),
+                },
+                "SqlError",
+            ),
+        ] {
             let http = MockServer::start().await;
-            let mut response =
-                ResponseTemplate::new(200).set_body_json(json!({"rows": [{"count": 8}]}));
-            if let Some(value) = carrier {
-                response = response.insert_header("x-packdb-partial-causes", value);
-            }
             Mock::given(method("POST"))
-                .respond_with(response)
-                .expect(1)
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({"rows": []})))
+                .expect(0)
                 .mount(&http)
                 .await;
-            let (url, shutdown, task) = start(Stub {
-                carrier: Some("failed_attempt_only"),
-                fail_stream: true,
-            })
-            .await;
-            let result = client(http.uri(), Some(url))
-                .execute_query_rows_with_completeness("SELECT count", HeaderMap::new())
+            let (url, shutdown, task) = start(stub).await;
+            let err = client(http.uri(), Some(url))
+                .execute_query_rows_with_transport("SELECT count", HeaderMap::new())
                 .await
-                .unwrap();
-            assert_eq!(result.data, [json!({"count": 8})]);
-            assert_eq!(
-                result.partial_causes,
-                carrier.into_iter().collect::<Vec<_>>()
+                .expect_err("no fallback after submission");
+            let kind = match &err {
+                packdb_client::ClientError::SqlError(_) => "SqlError",
+                packdb_client::ClientError::Unauthenticated(_) => "Unauthenticated",
+                packdb_client::ClientError::PermissionDenied(_) => "PermissionDenied",
+                packdb_client::ClientError::ConnectionError(_) => "ConnectionError",
+                packdb_client::ClientError::ProtocolError(_) => "ProtocolError",
+                _ => "other",
+            };
+            assert_eq!(kind, expected, "{err:?}");
+            assert!(
+                http.received_requests().await.unwrap().is_empty(),
+                "HTTP must not be contacted after Flight SQL accepted the query"
             );
             shutdown.send(()).unwrap();
             task.await.unwrap();
         }
+    }
+
+    /// A refused Flight SQL connection falls back to HTTP once, and the answer
+    /// says so.
+    #[tokio::test]
+    async fn a_refused_flight_connection_falls_back_and_reports_it() {
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let flight = format!("http://{}", closed.local_addr().unwrap());
+        drop(closed);
+        let http = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/sql"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"rows": [{"count": 8}]}))
+                    .insert_header("x-packdb-partial-causes", "cold_tier_unavailable"),
+            )
+            .expect(1)
+            .mount(&http)
+            .await;
+        let answer = client(http.uri(), Some(flight))
+            .execute_query_rows_with_transport("SELECT count", HeaderMap::new())
+            .await
+            .unwrap();
+        assert_eq!(answer.transport, packdb_client::TransportUsed::Http);
+        assert!(answer.fallback_reason.is_some());
+        assert_eq!(answer.response.data, [json!({"count": 8})]);
+        assert_eq!(answer.response.partial_causes, ["cold_tier_unavailable"]);
     }
 }

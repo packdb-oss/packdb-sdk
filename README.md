@@ -55,7 +55,7 @@ Use this as `src/main.rs`:
 ```rust
 use std::time::Duration;
 
-use packdb_client::{AuthConfig, SqlClient, SqlClientConfig};
+use packdb_client::{AuthConfig, SqlClient, SqlClientConfig, SqlTransport};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flight_url: None,
         auth: AuthConfig::api_key(api_key).into_provider(),
         timeout: Duration::from_secs(30),
-        http_only: true,
+        transport: SqlTransport::Http,
     });
 
     let response = client
@@ -105,10 +105,14 @@ The application gets its own `Cargo.lock`: the SDK checkout's lockfile does not
 pin a consuming application's transitive dependencies. Review and commit the
 application lockfile, audit it, and use `cargo run --locked` on subsequent runs.
 
-For Flight SQL, enable `flight-sql` instead of `sql`, set `flight_url` to the
-endpoint supplied by your operator, and set `http_only: false`. The client prefers
-Flight SQL and falls back to HTTP on a Flight failure; completeness comes from
-the transport that supplies the answer. This does not provision a Flight endpoint.
+For Flight SQL, enable `flight-sql` instead of `sql` and set `flight_url` to the
+endpoint supplied by your operator. `SqlTransport::FlightSql` uses Flight SQL only.
+`SqlTransport::Auto` prefers Flight SQL and falls back to HTTP once, only when the
+Flight SQL connection could not be opened before any request was sent; after that,
+and for authentication, permission, TLS and query errors, the Flight SQL error is
+returned. `execute_query_rows_with_transport` reports which transport answered and
+why it fell back. Completeness comes from the transport that supplies the answer.
+This does not provision a Flight endpoint.
 
 For context propagation rather than SQL, see
 [`packdb-otel`](crates/packdb-otel/README.md). It is not an OTLP exporter.
