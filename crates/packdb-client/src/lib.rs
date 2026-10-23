@@ -39,6 +39,6 @@ pub use outcome::ClientOutcome;
 
 #[cfg(feature = "sql")]
 pub use sql::{
-    OutputFormat, RowsAnswer, SqlClient, SqlClientConfig, SqlJsonResponse, SqlTransport,
-    TransportUsed, execute_sql_http,
+    OutputFormat, QueryFailure, RowsAnswer, SqlClient, SqlClientConfig, SqlJsonResponse,
+    SqlTransport, TransportUsed, execute_sql_http,
 };

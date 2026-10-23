@@ -11,7 +11,8 @@
   opened before any request was sent, not after a failure part-way through a
   query.
 - Add `SqlClient::execute_query_rows_with_transport`, returning `RowsAnswer`
-  with the transport that answered and any fallback reason.
+  with the transport that answered and any fallback reason, or a
+  `QueryFailure` that keeps the same history when the query fails.
 - Deprecate `ClientError::exit_code`.
 - Add `OutputFormat::render` for rows already in hand, such as those returned
   with their completeness.

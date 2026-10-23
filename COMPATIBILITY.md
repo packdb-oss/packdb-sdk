@@ -37,7 +37,9 @@ Breaking changes:
   reports the error.
 
 Additions: `SqlClient::execute_query_rows_with_transport`, `RowsAnswer` and
-`TransportUsed` report which transport answered and why `Auto` fell back.
+`TransportUsed` report which transport answered and why `Auto` fell back. On
+failure it returns `QueryFailure`, which keeps the failing transport and any
+fallback reason; it converts into `ClientError`.
 
 An empty `partial_causes` list means the answering transport reported no partial
 causes. It is not, by itself, an independent statement that the result is

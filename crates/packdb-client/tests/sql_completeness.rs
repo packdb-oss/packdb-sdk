@@ -263,10 +263,16 @@ mod flight {
                 .mount(&http)
                 .await;
             let (url, shutdown, task) = start(stub).await;
-            let err = client(http.uri(), Some(url))
+            let failure = client(http.uri(), Some(url))
                 .execute_query_rows_with_transport("SELECT count", HeaderMap::new())
                 .await
                 .expect_err("no fallback after submission");
+            assert_eq!(
+                failure.transport,
+                Some(packdb_client::TransportUsed::FlightSql)
+            );
+            assert_eq!(failure.fallback_reason, None);
+            let err = failure.error;
             let kind = match &err {
                 packdb_client::ClientError::SqlError(_) => "SqlError",
                 packdb_client::ClientError::Unauthenticated(_) => "Unauthenticated",
@@ -311,5 +317,39 @@ mod flight {
         assert!(answer.fallback_reason.is_some());
         assert_eq!(answer.response.data, [json!({"count": 8})]);
         assert_eq!(answer.response.partial_causes, ["cold_tier_unavailable"]);
+    }
+
+    /// When `Auto` falls back and HTTP then fails, the failure keeps the
+    /// fallback history: which transport failed and why Flight SQL was skipped.
+    #[tokio::test]
+    async fn a_failure_after_fallback_keeps_the_fallback_history() {
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let flight = format!("http://{}", closed.local_addr().unwrap());
+        drop(closed);
+        let http = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/sql"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("who are you"))
+            .expect(1)
+            .mount(&http)
+            .await;
+        let failure = client(http.uri(), Some(flight))
+            .execute_query_rows_with_transport("SELECT count", HeaderMap::new())
+            .await
+            .expect_err("HTTP refuses the credentials");
+        assert!(
+            matches!(
+                failure.error,
+                packdb_client::ClientError::Unauthenticated(_)
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(failure.transport, Some(packdb_client::TransportUsed::Http));
+        assert!(failure.fallback_reason.is_some(), "{failure:?}");
+        let error: packdb_client::ClientError = failure.into();
+        assert!(matches!(
+            error,
+            packdb_client::ClientError::Unauthenticated(_)
+        ));
     }
 }

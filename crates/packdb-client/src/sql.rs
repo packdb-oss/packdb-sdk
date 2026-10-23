@@ -130,6 +130,48 @@ pub enum TransportUsed {
     FlightSql,
 }
 
+/// A failed query with the transport history behind it, so a caller can report
+/// which transport failed and whether [`SqlTransport::Auto`] had fallen back.
+#[derive(Debug)]
+pub struct QueryFailure {
+    /// What failed.
+    pub error: ClientError,
+    /// The transport whose attempt produced `error`; `None` when the query
+    /// failed before any transport was tried.
+    pub transport: Option<TransportUsed>,
+    /// Why [`SqlTransport::Auto`] fell back from Flight SQL to HTTP before
+    /// `error`, if it did.
+    pub fallback_reason: Option<String>,
+}
+
+impl QueryFailure {
+    fn before_any_transport(error: ClientError) -> Self {
+        Self {
+            error,
+            transport: None,
+            fallback_reason: None,
+        }
+    }
+}
+
+impl std::fmt::Display for QueryFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.error, f)
+    }
+}
+
+impl std::error::Error for QueryFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+impl From<QueryFailure> for ClientError {
+    fn from(failure: QueryFailure) -> Self {
+        failure.error
+    }
+}
+
 /// Rows with their completeness and the transport that produced them.
 #[derive(Debug, Clone)]
 pub struct RowsAnswer {
@@ -270,16 +312,17 @@ impl SqlClient {
 
     /// Like [`Self::execute_query_rows_with_completeness`], and also reports
     /// the transport that answered and why [`SqlTransport::Auto`] fell back,
-    /// if it did.
+    /// if it did. A failure keeps the same history.
     ///
     /// # Errors
     ///
-    /// Same taxonomy as [`Self::execute_query`].
+    /// Returns a [`QueryFailure`] whose `error` follows the taxonomy of
+    /// [`Self::execute_query`].
     pub async fn execute_query_rows_with_transport(
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<RowsAnswer> {
+    ) -> Result<RowsAnswer, QueryFailure> {
         self.execute_query_rows_inner(sql, extra_headers).await
     }
 
@@ -289,7 +332,7 @@ impl SqlClient {
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<RowsAnswer> {
+    ) -> Result<RowsAnswer, QueryFailure> {
         match self.config.transport {
             SqlTransport::Http => self.http_answer(sql, extra_headers, None).await,
             SqlTransport::FlightSql => self.flight_only_answer(sql, extra_headers).await,
@@ -306,7 +349,13 @@ impl SqlClient {
                                 .http_answer(sql, extra_headers, Some(error.to_string()))
                                 .await;
                         }
-                        Err(FlightFailure::Final(error)) => return Err(error),
+                        Err(FlightFailure::Final(error)) => {
+                            return Err(QueryFailure {
+                                error,
+                                transport: Some(TransportUsed::FlightSql),
+                                fallback_reason: None,
+                            });
+                        }
                     }
                 }
                 self.http_answer(sql, extra_headers, None).await
@@ -319,12 +368,19 @@ impl SqlClient {
         sql: &str,
         extra_headers: HeaderMap,
         fallback_reason: Option<String>,
-    ) -> ClientResult<RowsAnswer> {
-        Ok(RowsAnswer {
-            response: self.execute_http_query_rows(sql, extra_headers).await?,
-            transport: TransportUsed::Http,
-            fallback_reason,
-        })
+    ) -> Result<RowsAnswer, QueryFailure> {
+        match self.execute_http_query_rows(sql, extra_headers).await {
+            Ok(response) => Ok(RowsAnswer {
+                response,
+                transport: TransportUsed::Http,
+                fallback_reason,
+            }),
+            Err(error) => Err(QueryFailure {
+                error,
+                transport: Some(TransportUsed::Http),
+                fallback_reason,
+            }),
+        }
     }
 
     #[cfg(feature = "flight-sql")]
@@ -332,13 +388,19 @@ impl SqlClient {
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<RowsAnswer> {
+    ) -> Result<RowsAnswer, QueryFailure> {
         let flight_url = self.config.flight_url.as_deref().ok_or_else(|| {
-            ClientError::ConfigError("the Flight SQL transport needs a Flight SQL URL".into())
+            QueryFailure::before_any_transport(ClientError::ConfigError(
+                "the Flight SQL transport needs a Flight SQL URL".into(),
+            ))
         })?;
         self.flight_answer(sql, flight_url, &extra_headers)
             .await
-            .map_err(FlightFailure::into_error)
+            .map_err(|failure| QueryFailure {
+                error: failure.into_error(),
+                transport: Some(TransportUsed::FlightSql),
+                fallback_reason: None,
+            })
     }
 
     #[cfg(not(feature = "flight-sql"))]
@@ -346,9 +408,11 @@ impl SqlClient {
         &self,
         _sql: &str,
         _extra_headers: HeaderMap,
-    ) -> ClientResult<RowsAnswer> {
-        Err(ClientError::ConfigError(
-            "this build has no Flight SQL support (feature `flight-sql`)".into(),
+    ) -> Result<RowsAnswer, QueryFailure> {
+        Err(QueryFailure::before_any_transport(
+            ClientError::ConfigError(
+                "this build has no Flight SQL support (feature `flight-sql`)".into(),
+            ),
         ))
     }
 
@@ -1465,7 +1529,12 @@ mod tests {
             .execute_query_rows_with_transport("SELECT 1", HeaderMap::new())
             .await
             .expect_err("no fallback");
-        assert!(matches!(err, ClientError::ConnectionError(_)), "{err:?}");
+        assert!(
+            matches!(err.error, ClientError::ConnectionError(_)),
+            "{err:?}"
+        );
+        assert_eq!(err.transport, Some(TransportUsed::FlightSql));
+        assert_eq!(err.fallback_reason, None);
         assert!(
             http.accept().is_err(),
             "HTTP must not be contacted when Flight SQL is explicit"
@@ -1487,7 +1556,8 @@ mod tests {
             .execute_query_rows_with_transport("SELECT 1", HeaderMap::new())
             .await
             .expect_err("needs a Flight URL");
-        assert!(matches!(err, ClientError::ConfigError(_)), "{err:?}");
+        assert!(matches!(err.error, ClientError::ConfigError(_)), "{err:?}");
+        assert_eq!(err.transport, None);
     }
 
     /// A refused connection qualifies for fallback; an error that names TLS
