@@ -13,6 +13,8 @@
 - Add `SqlClient::execute_query_rows_with_transport`, returning `RowsAnswer`
   with the transport that answered and any fallback reason.
 - Deprecate `ClientError::exit_code`.
+- Add `OutputFormat::render` for rows already in hand, such as those returned
+  with their completeness.
 
 ## 0.2.4
 

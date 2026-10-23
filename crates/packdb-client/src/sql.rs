@@ -61,6 +61,19 @@ impl OutputFormat {
             ))),
         }
     }
+
+    /// Render rows, one JSON object per row, in this format.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ClientError::ProtocolError` if a row cannot be rendered.
+    pub fn render(self, rows: &[serde_json::Value]) -> ClientResult<String> {
+        match self {
+            OutputFormat::Json => format_json(rows),
+            OutputFormat::Table => format_table(rows),
+            OutputFormat::Csv => format_csv(rows),
+        }
+    }
 }
 
 /// SQL client configuration
@@ -174,11 +187,7 @@ impl SqlClient {
             .await?
             .response
             .data;
-        match format {
-            OutputFormat::Json => format_json(&rows),
-            OutputFormat::Table => format_table(&rows),
-            OutputFormat::Csv => format_csv(&rows),
-        }
+        format.render(&rows)
     }
 
     /// Execute a SQL query and return structured rows, one
