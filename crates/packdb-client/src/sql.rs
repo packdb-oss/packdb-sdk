@@ -61,6 +61,19 @@ impl OutputFormat {
             ))),
         }
     }
+
+    /// Render rows, one JSON object per row, in this format.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ClientError::ProtocolError` if a row cannot be rendered.
+    pub fn render(self, rows: &[serde_json::Value]) -> ClientResult<String> {
+        match self {
+            OutputFormat::Json => format_json(rows),
+            OutputFormat::Table => format_table(rows),
+            OutputFormat::Csv => format_csv(rows),
+        }
+    }
 }
 
 /// SQL client configuration
@@ -83,8 +96,91 @@ pub struct SqlClientConfig {
     /// Request timeout
     pub timeout: Duration,
 
-    /// Force HTTP mode (skip Flight SQL even if available)
-    pub http_only: bool,
+    /// Which transport to use; see [`SqlTransport`].
+    pub transport: SqlTransport,
+}
+
+/// Transport policy for [`SqlClient`].
+///
+/// An explicit transport never falls back. [`SqlTransport::Auto`] uses Flight
+/// SQL when [`SqlClientConfig::flight_url`] is set and the `flight-sql`
+/// feature is compiled in, otherwise HTTP, and falls back to HTTP once, only
+/// when the Flight SQL connection could not be opened before any request was
+/// sent: the connection was refused, the host or network was unreachable, or
+/// the connect attempt timed out. Once a request may have been sent, and for
+/// authentication, permission, TLS and query errors, the Flight SQL error is
+/// returned instead.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SqlTransport {
+    /// Flight SQL when configured, with the bounded fallback described above.
+    #[default]
+    Auto,
+    /// HTTP only.
+    Http,
+    /// Flight SQL only; requires [`SqlClientConfig::flight_url`].
+    FlightSql,
+}
+
+/// The transport that answered a query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportUsed {
+    /// `POST /api/v1/sql`.
+    Http,
+    /// Flight SQL.
+    FlightSql,
+}
+
+/// A failed query with the transport history behind it, so a caller can report
+/// which transport failed and whether [`SqlTransport::Auto`] had fallen back.
+#[derive(Debug)]
+pub struct QueryFailure {
+    /// What failed.
+    pub error: ClientError,
+    /// The transport whose attempt produced `error`; `None` when the query
+    /// failed before any transport was tried.
+    pub transport: Option<TransportUsed>,
+    /// Why [`SqlTransport::Auto`] fell back from Flight SQL to HTTP before
+    /// `error`, if it did.
+    pub fallback_reason: Option<String>,
+}
+
+impl QueryFailure {
+    fn before_any_transport(error: ClientError) -> Self {
+        Self {
+            error,
+            transport: None,
+            fallback_reason: None,
+        }
+    }
+}
+
+impl std::fmt::Display for QueryFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.error, f)
+    }
+}
+
+impl std::error::Error for QueryFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+impl From<QueryFailure> for ClientError {
+    fn from(failure: QueryFailure) -> Self {
+        failure.error
+    }
+}
+
+/// Rows with their completeness and the transport that produced them.
+#[derive(Debug, Clone)]
+pub struct RowsAnswer {
+    /// Rows and the upstream completeness carrier.
+    pub response: QueryResponse<Vec<serde_json::Value>>,
+    /// The transport that answered.
+    pub transport: TransportUsed,
+    /// Why [`SqlTransport::Auto`] fell back from Flight SQL to HTTP, if it did.
+    pub fallback_reason: Option<String>,
 }
 
 impl std::fmt::Debug for SqlClientConfig {
@@ -97,7 +193,7 @@ impl std::fmt::Debug for SqlClientConfig {
             .field("flight_url", &self.flight_url)
             .field("auth", &"<AuthProvider>")
             .field("timeout", &self.timeout)
-            .field("http_only", &self.http_only)
+            .field("transport", &self.transport)
             .finish()
     }
 }
@@ -131,21 +227,18 @@ impl SqlClient {
         let rows = self
             .execute_query_rows_inner(sql, HeaderMap::new())
             .await?
+            .response
             .data;
-        match format {
-            OutputFormat::Json => format_json(&rows),
-            OutputFormat::Table => format_table(&rows),
-            OutputFormat::Csv => format_csv(&rows),
-        }
+        format.render(&rows)
     }
 
     /// Execute a SQL query and return structured rows, one
     /// `serde_json::Value` object per row.
     ///
-    /// This is the server-to-server entry point: Flight SQL is
-    /// preferred when `flight_url` is set and the `flight-sql`
-    /// feature is compiled in, with fallback to HTTP on any
-    /// Flight SQL failure. Both transports produce the same
+    /// This is the server-to-server entry point: the configured
+    /// [`SqlTransport`] picks the transport, and [`SqlTransport::Auto`]
+    /// prefers Flight SQL with its bounded HTTP fallback. Both
+    /// transports produce the same
     /// `Vec<serde_json::Value>` row shape — Flight SQL
     /// `RecordBatch`es are normalized through the Arrow JSON
     /// writer — so the evaluator's alert-semantics projection
@@ -165,6 +258,7 @@ impl SqlClient {
         Ok(self
             .execute_query_rows_inner(sql, HeaderMap::new())
             .await?
+            .response
             .data)
     }
 
@@ -191,6 +285,7 @@ impl SqlClient {
         Ok(self
             .execute_query_rows_inner(sql, extra_headers)
             .await?
+            .response
             .data)
     }
 
@@ -209,38 +304,137 @@ impl SqlClient {
         sql: &str,
         extra_headers: HeaderMap,
     ) -> ClientResult<QueryResponse<Vec<serde_json::Value>>> {
+        Ok(self
+            .execute_query_rows_inner(sql, extra_headers)
+            .await?
+            .response)
+    }
+
+    /// Like [`Self::execute_query_rows_with_completeness`], and also reports
+    /// the transport that answered and why [`SqlTransport::Auto`] fell back,
+    /// if it did. A failure keeps the same history.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`QueryFailure`] whose `error` follows the taxonomy of
+    /// [`Self::execute_query`].
+    pub async fn execute_query_rows_with_transport(
+        &self,
+        sql: &str,
+        extra_headers: HeaderMap,
+    ) -> Result<RowsAnswer, QueryFailure> {
         self.execute_query_rows_inner(sql, extra_headers).await
     }
 
-    /// Shared entry point for all rows-returning paths. Flight
-    /// SQL first, HTTP fallback — same policy as
-    /// [`Self::execute_query`].
+    /// Shared entry point for all rows-returning paths; applies the
+    /// configured [`SqlTransport`].
     async fn execute_query_rows_inner(
         &self,
         sql: &str,
         extra_headers: HeaderMap,
-    ) -> ClientResult<QueryResponse<Vec<serde_json::Value>>> {
-        #[cfg(feature = "flight-sql")]
-        if !self.config.http_only
-            && let Some(ref flight_url) = self.config.flight_url
-        {
-            match self
-                .execute_flight_query(sql, flight_url, &extra_headers)
-                .await
-            {
-                Ok(response) => {
-                    return Ok(QueryResponse {
-                        data: batches_to_json_rows(&response.data)?,
-                        partial_causes: response.partial_causes,
-                    });
+    ) -> Result<RowsAnswer, QueryFailure> {
+        match self.config.transport {
+            SqlTransport::Http => self.http_answer(sql, extra_headers, None).await,
+            SqlTransport::FlightSql => self.flight_only_answer(sql, extra_headers).await,
+            SqlTransport::Auto => {
+                #[cfg(feature = "flight-sql")]
+                if let Some(flight_url) = self.config.flight_url.as_deref() {
+                    match self.flight_answer(sql, flight_url, &extra_headers).await {
+                        Ok(answer) => return Ok(answer),
+                        Err(FlightFailure::BeforeSubmission(error)) => {
+                            tracing::debug!(
+                                "Flight SQL connection failed before submission, using HTTP: {error}"
+                            );
+                            return self
+                                .http_answer(sql, extra_headers, Some(error.to_string()))
+                                .await;
+                        }
+                        Err(FlightFailure::Final(error)) => {
+                            return Err(QueryFailure {
+                                error,
+                                transport: Some(TransportUsed::FlightSql),
+                                fallback_reason: None,
+                            });
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::debug!("Flight SQL failed, falling back to HTTP: {e}");
-                }
+                self.http_answer(sql, extra_headers, None).await
             }
         }
+    }
 
-        self.execute_http_query_rows(sql, extra_headers).await
+    async fn http_answer(
+        &self,
+        sql: &str,
+        extra_headers: HeaderMap,
+        fallback_reason: Option<String>,
+    ) -> Result<RowsAnswer, QueryFailure> {
+        match self.execute_http_query_rows(sql, extra_headers).await {
+            Ok(response) => Ok(RowsAnswer {
+                response,
+                transport: TransportUsed::Http,
+                fallback_reason,
+            }),
+            Err(error) => Err(QueryFailure {
+                error,
+                transport: Some(TransportUsed::Http),
+                fallback_reason,
+            }),
+        }
+    }
+
+    #[cfg(feature = "flight-sql")]
+    async fn flight_only_answer(
+        &self,
+        sql: &str,
+        extra_headers: HeaderMap,
+    ) -> Result<RowsAnswer, QueryFailure> {
+        let flight_url = self.config.flight_url.as_deref().ok_or_else(|| {
+            QueryFailure::before_any_transport(ClientError::ConfigError(
+                "the Flight SQL transport needs a Flight SQL URL".into(),
+            ))
+        })?;
+        self.flight_answer(sql, flight_url, &extra_headers)
+            .await
+            .map_err(|failure| QueryFailure {
+                error: failure.into_error(),
+                transport: Some(TransportUsed::FlightSql),
+                fallback_reason: None,
+            })
+    }
+
+    #[cfg(not(feature = "flight-sql"))]
+    async fn flight_only_answer(
+        &self,
+        _sql: &str,
+        _extra_headers: HeaderMap,
+    ) -> Result<RowsAnswer, QueryFailure> {
+        Err(QueryFailure::before_any_transport(
+            ClientError::ConfigError(
+                "this build has no Flight SQL support (feature `flight-sql`)".into(),
+            ),
+        ))
+    }
+
+    #[cfg(feature = "flight-sql")]
+    async fn flight_answer(
+        &self,
+        sql: &str,
+        flight_url: &str,
+        extra_headers: &HeaderMap,
+    ) -> Result<RowsAnswer, FlightFailure> {
+        let response = self
+            .execute_flight_query(sql, flight_url, extra_headers)
+            .await?;
+        let data = batches_to_json_rows(&response.data).map_err(FlightFailure::Final)?;
+        Ok(RowsAnswer {
+            response: QueryResponse {
+                data,
+                partial_causes: response.partial_causes,
+            },
+            transport: TransportUsed::FlightSql,
+            fallback_reason: None,
+        })
     }
 
     /// Execute query via HTTP POST to /api/v1/sql and return the
@@ -284,27 +478,35 @@ impl SqlClient {
         sql: &str,
         flight_url: &str,
         extra_headers: &HeaderMap,
-    ) -> ClientResult<QueryResponse<Vec<RecordBatch>>> {
+    ) -> Result<QueryResponse<Vec<RecordBatch>>, FlightFailure> {
         let endpoint = Endpoint::from_shared(flight_url.to_string())
-            .map_err(|e| ClientError::ConfigError(format!("Invalid flight URL: {e}")))?
+            .map_err(|e| {
+                FlightFailure::Final(ClientError::ConfigError(format!("Invalid flight URL: {e}")))
+            })?
             .timeout(self.config.timeout);
 
-        let channel = endpoint
-            .connect()
-            .await
-            .map_err(|e| ClientError::ConnectionError(format!("Flight connect failed: {e}")))?;
+        let channel = endpoint.connect().await.map_err(|e| {
+            let error = ClientError::ConnectionError(format!("Flight connect failed: {e}"));
+            if connect_failure_permits_fallback(&e) {
+                FlightFailure::BeforeSubmission(error)
+            } else {
+                FlightFailure::Final(error)
+            }
+        })?;
 
         let mut client = FlightSqlServiceClient::new(channel);
-        self.apply_flight_auth(&mut client).await?;
+        self.apply_flight_auth(&mut client)
+            .await
+            .map_err(FlightFailure::Final)?;
 
         // Forward caller-supplied headers as gRPC metadata. Using
         // `set_header` keeps Flight SQL in parity with HTTP without assigning
         // application-specific meaning to those headers.
         for (name, value) in extra_headers {
             let value_str = value.to_str().map_err(|e| {
-                ClientError::ConfigError(format!(
+                FlightFailure::Final(ClientError::ConfigError(format!(
                     "header `{name}` not ASCII-safe for Flight SQL: {e}"
-                ))
+                )))
             })?;
             client.set_header(name.as_str(), value_str);
         }
@@ -326,21 +528,23 @@ impl SqlClient {
             }
         }
 
-        let flight_info = client
-            .execute(sql.to_string(), None)
-            .await
-            .map_err(|e| ClientError::ProtocolError(format!("Flight execute failed: {e}")))?;
+        let flight_info = client.execute(sql.to_string(), None).await.map_err(|e| {
+            FlightFailure::Final(crate::error::from_flight_error("Flight execute", e))
+        })?;
 
         let ticket = flight_info
             .endpoint
             .first()
             .and_then(|ep| ep.ticket.clone())
-            .ok_or_else(|| ClientError::ProtocolError("No endpoint in FlightInfo".into()))?;
+            .ok_or_else(|| {
+                FlightFailure::Final(ClientError::ProtocolError(
+                    "No endpoint in FlightInfo".into(),
+                ))
+            })?;
 
-        let stream = client
-            .do_get(ticket)
-            .await
-            .map_err(|e| ClientError::ProtocolError(format!("Flight do_get failed: {e}")))?;
+        let stream = client.do_get(ticket).await.map_err(|e| {
+            FlightFailure::Final(crate::error::from_flight_error("Flight do_get", e))
+        })?;
 
         let partial_causes = crate::completeness::parse_partial_causes(
             stream
@@ -349,10 +553,9 @@ impl SqlClient {
                 .iter()
                 .map(|value| value.to_str().ok()),
         );
-        let batches: Vec<RecordBatch> = stream
-            .try_collect()
-            .await
-            .map_err(|e| ClientError::ProtocolError(format!("Flight stream error: {e}")))?;
+        let batches: Vec<RecordBatch> = stream.try_collect().await.map_err(|e| {
+            FlightFailure::Final(crate::error::from_flight_error("Flight stream", e))
+        })?;
 
         Ok(QueryResponse {
             data: batches,
@@ -421,6 +624,59 @@ impl SqlClient {
             )))
         }
     }
+}
+
+/// Why a Flight SQL attempt failed, as far as fallback is concerned.
+#[cfg(feature = "flight-sql")]
+enum FlightFailure {
+    /// The connection could not be opened, so no request was sent.
+    BeforeSubmission(ClientError),
+    /// Any other failure. A request may have been sent, or the failure is a
+    /// configuration, authentication, permission, TLS or query error.
+    Final(ClientError),
+}
+
+#[cfg(feature = "flight-sql")]
+impl FlightFailure {
+    fn into_error(self) -> ClientError {
+        match self {
+            FlightFailure::BeforeSubmission(error) | FlightFailure::Final(error) => error,
+        }
+    }
+}
+
+/// Whether a Flight SQL connect failure happened before any request could be
+/// sent: an I/O error showing the connection was refused, the host or network
+/// was unreachable, or the connect attempt timed out. TLS and certificate
+/// failures, and causes that cannot be identified, do not qualify.
+#[cfg(feature = "flight-sql")]
+fn connect_failure_permits_fallback(err: &(dyn std::error::Error + 'static)) -> bool {
+    use std::io::ErrorKind;
+    let mut current = Some(err);
+    let mut refused_or_unreachable = false;
+    while let Some(error) = current {
+        let text = error.to_string().to_ascii_lowercase();
+        if ["certificate", "tls", "ssl"]
+            .iter()
+            .any(|word| text.contains(word))
+        {
+            return false;
+        }
+        if let Some(io) = error.downcast_ref::<std::io::Error>()
+            && matches!(
+                io.kind(),
+                ErrorKind::ConnectionRefused
+                    | ErrorKind::TimedOut
+                    | ErrorKind::HostUnreachable
+                    | ErrorKind::NetworkUnreachable
+                    | ErrorKind::AddrNotAvailable
+            )
+        {
+            refused_or_unreachable = true;
+        }
+        current = error.source();
+    }
+    refused_or_unreachable
 }
 
 /// SQL query request payload
@@ -537,11 +793,12 @@ const SQL_REJECTION_PREFIXES: [&str; 2] = ["Query error:", "Parse error:"];
 /// Classify a non-2xx `/api/v1/sql` response into the exit-code taxonomy.
 ///
 /// Deliberately narrow: only a response the server identifies as a rejected
-/// query is a [`ClientError::SqlError`] (exit 1), and `401`/`403` are
-/// credential problems, [`ClientError::ConnectionError`] (exit 2). Everything
-/// else -- including every `5xx`, which covers storage failures and
-/// unavailability as well as failed queries -- stays a
-/// [`ClientError::ProtocolError`] (exit 3) until its meaning is established.
+/// query is a [`ClientError::SqlError`]. `401` is
+/// [`ClientError::Unauthenticated`] and `403` is
+/// [`ClientError::PermissionDenied`]. Everything else -- including every
+/// `5xx`, which covers storage failures and unavailability as well as failed
+/// queries -- stays a [`ClientError::ProtocolError`] until its meaning is
+/// established.
 fn classify_http_failure(status: reqwest::StatusCode, body: String) -> ClientError {
     use reqwest::StatusCode;
     if status == StatusCode::BAD_REQUEST
@@ -552,8 +809,11 @@ fn classify_http_failure(status: reqwest::StatusCode, body: String) -> ClientErr
         return ClientError::SqlError(body);
     }
     let detail = format!("Server returned status {status}: {body}");
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return ClientError::ConnectionError(detail);
+    if status == StatusCode::UNAUTHORIZED {
+        return ClientError::Unauthenticated(detail);
+    }
+    if status == StatusCode::FORBIDDEN {
+        return ClientError::PermissionDenied(detail);
     }
     ClientError::ProtocolError(detail)
 }
@@ -739,7 +999,7 @@ mod tests {
             flight_url: None,
             auth: Arc::new(crate::credentials::NoAuth),
             timeout: Duration::from_secs(30),
-            http_only: false,
+            transport: SqlTransport::Auto,
         };
         let _client = SqlClient::new(config);
     }
@@ -895,7 +1155,7 @@ mod tests {
             flight_url: None,
             auth: Arc::new(crate::credentials::NoAuth),
             timeout: Duration::from_secs(2),
-            http_only: true,
+            transport: SqlTransport::Http,
         })
     }
 
@@ -945,7 +1205,7 @@ mod tests {
             flight_url: None,
             auth: Arc::new(jwt),
             timeout: Duration::from_secs(2),
-            http_only: true,
+            transport: SqlTransport::Http,
         });
         client.ping().await.expect("ping returns ok on 200");
 
@@ -1133,41 +1393,65 @@ mod tests {
         .into_bytes()
     }
 
-    /// The exit-code contract for a non-2xx `/api/v1/sql` response, driven
-    /// through the real HTTP path. Only a 400 whose body the server renders
-    /// as a query or parse rejection is exit 1; 401/403 are exit 2; every
-    /// other response -- a 400 that is not about the SQL, and every 5xx --
-    /// stays exit 3.
+    /// How a non-2xx `/api/v1/sql` response is classified, driven through the
+    /// real HTTP path. Only a 400 whose body the server renders as a query or
+    /// parse rejection is a SQL error; 401 and 403 are told apart; every other
+    /// response -- a 400 that is not about the SQL, and every 5xx -- stays a
+    /// protocol error.
     #[tokio::test(flavor = "current_thread")]
-    async fn a_non_success_response_maps_to_the_documented_exit_code() {
+    async fn a_non_success_response_is_classified_by_status_and_body() {
         let cases = [
             (
                 "400 Bad Request",
                 "Query error: Failed to parse SQL: SQL error: ParserError(\"Expected: an SQL statement, found: INVALID\")",
-                1,
+                "SqlError",
             ),
-            ("400 Bad Request", "Parse error: unexpected token", 1),
-            ("400 Bad Request", "Configuration error: bad tenant", 3),
+            (
+                "400 Bad Request",
+                "Parse error: unexpected token",
+                "SqlError",
+            ),
+            (
+                "400 Bad Request",
+                "Configuration error: bad tenant",
+                "ProtocolError",
+            ),
             (
                 "400 Bad Request",
                 "  Query error: leading whitespace is not the server's rendering",
-                3,
+                "ProtocolError",
             ),
             (
                 "401 Unauthorized",
                 "Authentication error: missing credentials",
-                2,
+                "Unauthenticated",
             ),
-            ("403 Forbidden", "Authentication error: not permitted", 2),
-            ("404 Not Found", "not found", 3),
-            ("429 Too Many Requests", "Scan budget exceeded: too wide", 3),
-            ("500 Internal Server Error", "Storage error: disk full", 3),
+            (
+                "403 Forbidden",
+                "Authentication error: not permitted",
+                "PermissionDenied",
+            ),
+            ("404 Not Found", "not found", "ProtocolError"),
+            (
+                "429 Too Many Requests",
+                "Scan budget exceeded: too wide",
+                "ProtocolError",
+            ),
+            (
+                "500 Internal Server Error",
+                "Storage error: disk full",
+                "ProtocolError",
+            ),
             (
                 "500 Internal Server Error",
                 "Query error: a 500 is not a rejection",
-                3,
+                "ProtocolError",
             ),
-            ("503 Service Unavailable", "Unavailable: warming up", 3),
+            (
+                "503 Service Unavailable",
+                "Unavailable: warming up",
+                "ProtocolError",
+            ),
         ];
         for (status_line, body, expected) in cases {
             let (addr, server) = one_shot_server(http_response(status_line, body)).await;
@@ -1175,9 +1459,15 @@ mod tests {
                 .execute_query("SELECT 1", OutputFormat::Json)
                 .await
                 .expect_err("a non-2xx response is an error");
+            let kind = match &err {
+                ClientError::SqlError(_) => "SqlError",
+                ClientError::Unauthenticated(_) => "Unauthenticated",
+                ClientError::PermissionDenied(_) => "PermissionDenied",
+                ClientError::ProtocolError(_) => "ProtocolError",
+                _ => "other",
+            };
             assert_eq!(
-                err.exit_code(),
-                expected,
+                kind, expected,
                 "{status_line} {body:?} classified as {err:?}"
             );
             assert!(
@@ -1188,12 +1478,12 @@ mod tests {
         }
     }
 
-    /// With Flight SQL compiled in and an endpoint that cannot be reached,
-    /// the client falls back to HTTP; a query the server then rejects must
-    /// still be exit 1, not the Flight failure's class.
+    /// With Flight SQL compiled in and a Flight endpoint that refuses the
+    /// connection, `Auto` falls back to HTTP; a query the server then rejects
+    /// is still a SQL error, not the Flight failure's class.
     #[cfg(feature = "flight-sql")]
     #[tokio::test(flavor = "current_thread")]
-    async fn a_rejection_after_flight_fallback_is_still_exit_one() {
+    async fn a_rejection_after_flight_fallback_is_still_a_sql_error() {
         let closed = StdTcpListener::bind("127.0.0.1:0").expect("bind");
         let flight_addr = closed.local_addr().expect("local addr");
         drop(closed);
@@ -1207,14 +1497,98 @@ mod tests {
             flight_url: Some(format!("http://{flight_addr}")),
             auth: Arc::new(crate::credentials::NoAuth),
             timeout: Duration::from_secs(2),
-            http_only: false,
+            transport: SqlTransport::Auto,
         });
         let err = client
             .execute_query("INVALID SQL SYNTAX", OutputFormat::Json)
             .await
             .expect_err("rejected");
         assert!(matches!(err, ClientError::SqlError(_)), "{err:?}");
-        assert_eq!(err.exit_code(), 1);
         server.await.ok();
+    }
+
+    /// An explicit Flight SQL transport never falls back: a refused Flight
+    /// connection is the answer, and HTTP is never contacted.
+    #[cfg(feature = "flight-sql")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn explicit_flight_sql_never_falls_back() {
+        let closed = StdTcpListener::bind("127.0.0.1:0").expect("bind");
+        let flight_addr = closed.local_addr().expect("local addr");
+        drop(closed);
+        let http = StdTcpListener::bind("127.0.0.1:0").expect("bind");
+        let http_addr = http.local_addr().expect("local addr");
+        http.set_nonblocking(true).expect("nonblocking");
+        let client = SqlClient::new(SqlClientConfig {
+            url: format!("http://{http_addr}"),
+            flight_url: Some(format!("http://{flight_addr}")),
+            auth: Arc::new(crate::credentials::NoAuth),
+            timeout: Duration::from_secs(2),
+            transport: SqlTransport::FlightSql,
+        });
+        let err = client
+            .execute_query_rows_with_transport("SELECT 1", HeaderMap::new())
+            .await
+            .expect_err("no fallback");
+        assert!(
+            matches!(err.error, ClientError::ConnectionError(_)),
+            "{err:?}"
+        );
+        assert_eq!(err.transport, Some(TransportUsed::FlightSql));
+        assert_eq!(err.fallback_reason, None);
+        assert!(
+            http.accept().is_err(),
+            "HTTP must not be contacted when Flight SQL is explicit"
+        );
+    }
+
+    /// An explicit Flight SQL transport without a Flight URL is a
+    /// configuration error, not a silent switch to HTTP.
+    #[tokio::test(flavor = "current_thread")]
+    async fn explicit_flight_sql_without_a_flight_url_is_a_config_error() {
+        let client = SqlClient::new(SqlClientConfig {
+            url: "http://127.0.0.1:9".into(),
+            flight_url: None,
+            auth: Arc::new(crate::credentials::NoAuth),
+            timeout: Duration::from_secs(2),
+            transport: SqlTransport::FlightSql,
+        });
+        let err = client
+            .execute_query_rows_with_transport("SELECT 1", HeaderMap::new())
+            .await
+            .expect_err("needs a Flight URL");
+        assert!(matches!(err.error, ClientError::ConfigError(_)), "{err:?}");
+        assert_eq!(err.transport, None);
+    }
+
+    /// A refused connection qualifies for fallback; an error that names TLS
+    /// or a certificate does not, whatever I/O error sits beneath it, and
+    /// neither does a cause that cannot be identified.
+    #[cfg(feature = "flight-sql")]
+    #[test]
+    fn only_refused_or_unreachable_connects_permit_fallback() {
+        use std::io::{Error, ErrorKind};
+
+        #[derive(Debug)]
+        struct Wrapper(&'static str, Error);
+        impl std::fmt::Display for Wrapper {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+        impl std::error::Error for Wrapper {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.1)
+            }
+        }
+
+        let refused = Wrapper("transport error", Error::from(ErrorKind::ConnectionRefused));
+        assert!(connect_failure_permits_fallback(&refused));
+        let tls = Wrapper(
+            "invalid peer certificate",
+            Error::from(ErrorKind::ConnectionRefused),
+        );
+        assert!(!connect_failure_permits_fallback(&tls));
+        let unknown = Wrapper("transport error", Error::other("dns error"));
+        assert!(!connect_failure_permits_fallback(&unknown));
     }
 }

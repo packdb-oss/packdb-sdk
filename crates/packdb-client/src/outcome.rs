@@ -40,7 +40,7 @@ impl ClientOutcome {
             Err(error) => Self {
                 stdout: String::new(),
                 stderr: format!("ERROR: {error}\n"),
-                exit_code: error.exit_code(),
+                exit_code: error.legacy_exit_code(),
             },
         }
     }

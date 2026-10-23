@@ -25,7 +25,7 @@
 
 use std::time::Duration;
 
-use packdb_client::{AuthConfig, ClientError, SqlClientConfig};
+use packdb_client::{AuthConfig, ClientError, SqlClientConfig, SqlTransport};
 
 fn main() {
     let url = std::env::var("PACKDB_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
@@ -43,29 +43,26 @@ fn main() {
         flight_url: None,
         auth: auth.into_provider(),
         timeout: Duration::from_secs(30),
-        http_only: true,
+        transport: SqlTransport::Http,
     };
 
     println!("packdb-client example");
     println!("  server:   {}", config.url);
     println!("  timeout:  {:?}", config.timeout);
-    println!("  http_only:{}", config.http_only);
+    println!("  transport:{:?}", config.transport);
     println!();
 
-    // Exercise the error taxonomy without needing a server. These are the
-    // same variants the packdb-query CLI derives its documented exit codes
-    // from, which is why a consumer can classify a failure the same way a
-    // shell script does.
+    // Exercise the error taxonomy without needing a server. Each variant
+    // names what failed, so a caller can classify a failure without parsing
+    // the message.
     for error in [
         ClientError::SqlError("bad query".to_string()),
+        ClientError::Unauthenticated("401".to_string()),
+        ClientError::PermissionDenied("403".to_string()),
         ClientError::ConnectionError("unreachable".to_string()),
         ClientError::ProtocolError("bad frame".to_string()),
         ClientError::ConfigError("bad argument".to_string()),
     ] {
-        println!(
-            "  {:<28} -> exit code {}",
-            format!("{error}"),
-            error.exit_code()
-        );
+        println!("  {error}");
     }
 }
