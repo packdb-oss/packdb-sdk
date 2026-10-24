@@ -91,11 +91,12 @@ impl LogOptions {
 
 /// Which API answered, for classifying its failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Api {
+enum Api<'a> {
     Prometheus,
     Loki,
     TempoSearch,
-    TempoTrace,
+    /// A trace lookup, with the ID as requested.
+    TempoTrace(&'a str),
 }
 
 /// A client for the PromQL, LogQL and TraceQL query APIs.
@@ -249,8 +250,11 @@ impl QueryApiClient {
     /// # Errors
     ///
     /// [`ClientError::ConfigError`] if `trace_id` is not hexadecimal, before
-    /// any request; [`ClientError::NotFound`] when the server finds no part of
-    /// the trace; and the taxonomy of [`ClientError`] otherwise.
+    /// any request; [`ClientError::NotFound`] only when the server answers
+    /// that it found no part of this trace (`404` with the body
+    /// `{"error": "trace not found: <trace_id>"}` and no partial causes); and
+    /// the taxonomy of [`ClientError`] otherwise. Any other `404`, such as a
+    /// missing route or a proxy's page, is a [`ClientError::ProtocolError`].
     pub async fn trace(
         &self,
         trace_id: &str,
@@ -267,12 +271,13 @@ impl QueryApiClient {
         push(&mut params, "start", start.map(|s| s.to_string()));
         push(&mut params, "end", end.map(|e| e.to_string()));
         let path = format!("/api/v2/traces/{trace_id}");
-        self.get(Api::TempoTrace, &path, &params, headers).await
+        self.get(Api::TempoTrace(trace_id), &path, &params, headers)
+            .await
     }
 
     async fn get(
         &self,
-        api: Api,
+        api: Api<'_>,
         path: &str,
         params: &[(&str, String)],
         mut headers: HeaderMap,
@@ -294,11 +299,11 @@ impl QueryApiClient {
             .send()
             .await?;
         let status = response.status();
+        let partial_causes = partial_causes_of(response.headers());
         if !status.is_success() {
             let body = crate::diagnostics::best_effort_response_body(response).await;
-            return Err(classify(api, status, &body));
+            return Err(classify(api, status, &body, !partial_causes.is_empty()));
         }
-        let partial_causes = partial_causes_of(response.headers());
         let data = response.json::<Value>().await?;
         Ok(QueryResponse {
             data,
@@ -334,25 +339,40 @@ fn message(body: &str) -> String {
     body.trim().to_string()
 }
 
+/// Whether a trace lookup's `404` is the server's answer that no part of the
+/// trace exists: the exact error the server's trace handler writes for this
+/// ID, on a response that reports no partial causes. A missing route, a
+/// proxy's page, a message about another trace or a `404` that also reports
+/// partial causes is not that answer.
+fn is_trace_absence(trace_id: &str, body: &str, reported_partial: bool) -> bool {
+    !reported_partial
+        && serde_json::from_str::<Value>(body).is_ok_and(|json| {
+            json.get("error").and_then(Value::as_str)
+                == Some(format!("trace not found: {trace_id}").as_str())
+        })
+}
+
 /// Classify a non-2xx response. `400` is a rejected query on every API, as is
 /// Tempo search's `422` for an unsupported construct; `401` and `403` are told
-/// apart; a trace-by-ID `404` means no part of the trace was found. Everything
-/// else, including execution failures, budgets and timeouts, is a protocol or
-/// server failure.
-fn classify(api: Api, status: StatusCode, body: &str) -> ClientError {
+/// apart; a trace lookup's `404` is [`ClientError::NotFound`] only when
+/// [`is_trace_absence`] holds. Everything else, including execution failures,
+/// budgets, timeouts and unrecognised `404`s, is a protocol or server failure.
+fn classify(api: Api<'_>, status: StatusCode, body: &str, reported_partial: bool) -> ClientError {
     let message = message(body);
-    match status {
-        StatusCode::BAD_REQUEST => ClientError::QueryError(message),
-        StatusCode::UNPROCESSABLE_ENTITY if api == Api::TempoSearch => {
-            ClientError::QueryError(message)
-        }
-        StatusCode::UNAUTHORIZED => {
+    match (status, api) {
+        (StatusCode::BAD_REQUEST, _) => ClientError::QueryError(message),
+        (StatusCode::UNPROCESSABLE_ENTITY, Api::TempoSearch) => ClientError::QueryError(message),
+        (StatusCode::UNAUTHORIZED, _) => {
             ClientError::Unauthenticated(format!("Server returned status {status}: {message}"))
         }
-        StatusCode::FORBIDDEN => {
+        (StatusCode::FORBIDDEN, _) => {
             ClientError::PermissionDenied(format!("Server returned status {status}: {message}"))
         }
-        StatusCode::NOT_FOUND if api == Api::TempoTrace => ClientError::NotFound(message),
+        (StatusCode::NOT_FOUND, Api::TempoTrace(trace_id))
+            if is_trace_absence(trace_id, body, reported_partial) =>
+        {
+            ClientError::NotFound(message)
+        }
         _ => ClientError::ProtocolError(format!("Server returned status {status}: {message}")),
     }
 }
@@ -378,7 +398,7 @@ mod tests {
 
     #[test]
     fn statuses_are_classified_per_api() {
-        let kind = |api, status| match classify(api, status, "m") {
+        let kind = |api, status| match classify(api, status, "m", false) {
             ClientError::QueryError(_) => "query",
             ClientError::Unauthenticated(_) => "unauthenticated",
             ClientError::PermissionDenied(_) => "permission",
@@ -396,9 +416,9 @@ mod tests {
             (Api::Loki, StatusCode::INTERNAL_SERVER_ERROR, "protocol"),
             (Api::TempoSearch, StatusCode::UNPROCESSABLE_ENTITY, "query"),
             (Api::TempoSearch, StatusCode::NOT_FOUND, "protocol"),
-            (Api::TempoTrace, StatusCode::NOT_FOUND, "not_found"),
+            (Api::TempoTrace("ab"), StatusCode::NOT_FOUND, "protocol"),
             (Api::Loki, StatusCode::UNAUTHORIZED, "unauthenticated"),
-            (Api::TempoTrace, StatusCode::FORBIDDEN, "permission"),
+            (Api::TempoTrace("ab"), StatusCode::FORBIDDEN, "permission"),
             (Api::Prometheus, StatusCode::TOO_MANY_REQUESTS, "protocol"),
             (Api::Prometheus, StatusCode::SERVICE_UNAVAILABLE, "protocol"),
             (Api::Loki, StatusCode::GATEWAY_TIMEOUT, "protocol"),
@@ -406,6 +426,46 @@ mod tests {
         for (api, status, expected) in cases {
             assert_eq!(kind(api, status), expected, "{api:?} {status}");
         }
+    }
+
+    #[test]
+    fn only_the_servers_answer_for_this_trace_is_not_found() {
+        let not_found = |body: &str, partial: bool| {
+            matches!(
+                classify(
+                    Api::TempoTrace("ab12"),
+                    StatusCode::NOT_FOUND,
+                    body,
+                    partial
+                ),
+                ClientError::NotFound(_)
+            )
+        };
+        assert!(not_found(r#"{"error":"trace not found: ab12"}"#, false));
+        // A missing route, a proxy page, an empty body, another trace's
+        // answer, a near miss and a contradictory partial 404 are not.
+        for body in [
+            "404 page not found",
+            "<html><body><h1>404 Not Found</h1></body></html>",
+            "",
+            r#"{"error":"not found"}"#,
+            r#"{"error":"trace not found: ffff"}"#,
+            r#"{"error":"trace not found: ab12 "}"#,
+            r#"{"errors":[{"code":404,"msg":"trace not found: ab12"}]}"#,
+        ] {
+            assert!(!not_found(body, false), "{body:?}");
+        }
+        assert!(!not_found(r#"{"error":"trace not found: ab12"}"#, true));
+        // The same body on the search API is not a trace miss either.
+        assert!(matches!(
+            classify(
+                Api::TempoSearch,
+                StatusCode::NOT_FOUND,
+                r#"{"error":"trace not found: ab12"}"#,
+                false
+            ),
+            ClientError::ProtocolError(_)
+        ));
     }
 
     #[test]

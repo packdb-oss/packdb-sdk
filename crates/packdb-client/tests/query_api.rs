@@ -327,6 +327,66 @@ async fn tempo_failures_keep_their_meaning() {
     );
 }
 
+#[tokio::test]
+async fn only_the_servers_trace_miss_is_not_found() {
+    let server = MockServer::start().await;
+    let miss = json!({"error": "trace not found: ab12"});
+    Mock::given(method("GET"))
+        .and(path("/api/v2/traces/ab12"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(miss.clone()))
+        .mount(&server)
+        .await;
+    let other_404s = [
+        (
+            "a1",
+            ResponseTemplate::new(404).set_body_string("404 page not found"),
+        ),
+        (
+            "a2",
+            ResponseTemplate::new(404)
+                .insert_header("content-type", "text/html")
+                .set_body_string("<html><body><h1>404 Not Found</h1></body></html>"),
+        ),
+        ("a3", ResponseTemplate::new(404)),
+        (
+            "a4",
+            ResponseTemplate::new(404).set_body_json(json!({"error": "trace not found: ab12"})),
+        ),
+        (
+            "a5",
+            ResponseTemplate::new(404)
+                .set_body_json(json!({"error": "trace not found: a5"}))
+                .insert_header("x-packdb-partial-causes", "cold_tier_unavailable"),
+        ),
+    ];
+    for (id, response) in &other_404s {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v2/traces/{id}")))
+            .respond_with(response.clone())
+            .mount(&server)
+            .await;
+    }
+    let client = client(server.uri());
+    let missing = client
+        .trace("ab12", None, None, HeaderMap::new())
+        .await
+        .expect_err("absent");
+    assert!(
+        matches!(&missing, ClientError::NotFound(m) if m == "trace not found: ab12"),
+        "{missing:?}"
+    );
+    for (id, _) in &other_404s {
+        let error = client
+            .trace(id, None, None, HeaderMap::new())
+            .await
+            .expect_err("a 404");
+        assert!(
+            matches!(&error, ClientError::ProtocolError(m) if m.contains("404")),
+            "{id}: {error:?}"
+        );
+    }
+}
+
 /// An endpoint that refuses connections. Its port is the local end of an open
 /// loopback connection: nothing listens on it, and while this is held the
 /// system does not assign the port to another socket bound to port 0, as every

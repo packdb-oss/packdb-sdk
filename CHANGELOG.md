@@ -22,8 +22,10 @@
   server's decoded JSON with its completeness carrier, and checks that a trace ID
   is hexadecimal before sending anything.
 - Add `ClientError::QueryError` for a query the server rejects (`400`, and
-  `422` from a trace search) and `ClientError::NotFound` for a trace ID the
-  server does not have (`404`).
+  `422` from a trace search) and `ClientError::NotFound` for a trace the server
+  reports it has no part of: a `404` whose body is
+  `{"error": "trace not found: <id>"}` for the requested ID, with no partial
+  causes. Any other `404` is a `ProtocolError`.
 
 ## 0.2.4
 

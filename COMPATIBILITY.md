@@ -45,9 +45,11 @@ Additions without a feature: `QueryApiClient` and `QueryApiConfig` query the
 PromQL, LogQL and TraceQL HTTP APIs and return `QueryResponse<serde_json::Value>`;
 `LogOptions` and `Direction` carry LogQL's limit and direction. Its failures add
 `ClientError::QueryError` (a `400`, or a trace search's `422` for a query the server
-does not support) and `ClientError::NotFound` (a trace lookup's `404`); `401` and
-`403` are `Unauthenticated` and `PermissionDenied`, and other statuses are
-`ProtocolError` with the server's message.
+does not support) and `ClientError::NotFound` (a trace lookup's `404` whose body is
+the server's `{"error": "trace not found: <id>"}` for the requested ID, with no
+partial causes); `401` and `403` are `Unauthenticated` and `PermissionDenied`, and
+other statuses, including any other `404`, are `ProtocolError` with the server's
+message.
 
 An empty `partial_causes` list means the answering transport reported no partial
 causes. It is not, by itself, an independent statement that the result is
