@@ -16,6 +16,16 @@
 - Deprecate `ClientError::exit_code`.
 - Add `OutputFormat::render` for rows already in hand, such as those returned
   with their completeness.
+- Add `QueryApiClient` for the PromQL (`/api/v1/query`, `/api/v1/query_range`),
+  LogQL (`/loki/api/v1/query`, `/loki/api/v1/query_range`) and TraceQL
+  (`/api/search`, `/api/v2/traces/{id}`) APIs. It needs no feature, returns the
+  server's decoded JSON with its completeness carrier, and checks that a trace ID
+  is hexadecimal before sending anything.
+- Add `ClientError::QueryError` for a query the server rejects (`400`, and
+  `422` from a trace search) and `ClientError::NotFound` for a trace the server
+  reports it has no part of: a `404` whose body is
+  `{"error": "trace not found: <id>"}` for the requested ID, with no partial
+  causes. Any other `404` is a `ProtocolError`.
 
 ## 0.2.4
 

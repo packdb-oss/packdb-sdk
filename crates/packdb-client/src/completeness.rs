@@ -40,7 +40,8 @@ impl<T> QueryResponse<T> {
 
 /// Read every carrier value, preserving unknown tokens and failing closed.
 ///
-/// Absence means complete. A present value without usable tokens is partial
+/// Absence means no cause was reported; whether that establishes a complete
+/// result depends on the answering API. A present value without usable tokens is partial
 /// with `empty_partial_causes`; non-ASCII values use
 /// `unparseable_partial_causes`. Duplicate tokens are returned only once.
 pub fn partial_causes_of(headers: &HeaderMap) -> Vec<String> {

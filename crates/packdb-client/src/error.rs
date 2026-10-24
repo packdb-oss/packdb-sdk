@@ -32,6 +32,15 @@ pub enum ClientError {
     #[error("SQL error: {0}")]
     SqlError(String),
 
+    /// The server rejected a PromQL, LogQL or TraceQL query: invalid syntax or
+    /// parameters, or a construct the server does not support.
+    #[error("Query error: {0}")]
+    QueryError(String),
+
+    /// The requested item does not exist, such as a trace with no part found.
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     /// The server did not accept the request's credentials: HTTP `401` or
     /// gRPC `Unauthenticated`.
     #[error("Not authenticated: {0}")]
@@ -72,8 +81,8 @@ impl ClientError {
     /// The 0.2 mapping, kept for [`crate::outcome::ClientOutcome`].
     pub(crate) fn legacy_exit_code(&self) -> i32 {
         match self {
-            ClientError::SqlError(_) => 1,
-            ClientError::ProtocolError(_) => 3,
+            ClientError::SqlError(_) | ClientError::QueryError(_) => 1,
+            ClientError::ProtocolError(_) | ClientError::NotFound(_) => 3,
             ClientError::Unauthenticated(_)
             | ClientError::PermissionDenied(_)
             | ClientError::ConnectionError(_)

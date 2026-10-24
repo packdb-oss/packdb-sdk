@@ -29,6 +29,9 @@ pub use completeness::{QueryResponse, partial_causes_of};
 
 pub mod credentials;
 
+pub mod query;
+pub use query::{Direction, LogOptions, QueryApiClient, QueryApiConfig};
+
 #[cfg(feature = "sql")]
 pub mod sql;
 
