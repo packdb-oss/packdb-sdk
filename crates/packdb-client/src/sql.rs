@@ -1484,9 +1484,9 @@ mod tests {
     #[cfg(feature = "flight-sql")]
     #[tokio::test(flavor = "current_thread")]
     async fn a_rejection_after_flight_fallback_is_still_a_sql_error() {
-        let closed = StdTcpListener::bind("127.0.0.1:0").expect("bind");
-        let flight_addr = closed.local_addr().expect("local addr");
-        drop(closed);
+        // Port 1 is privileged and never listened on, so a connection is always
+        // refused. A freed ephemeral port could be taken by a concurrent test's server.
+        let flight_addr = "127.0.0.1:1";
         let (addr, server) = one_shot_server(http_response(
             "400 Bad Request",
             "Query error: Failed to parse SQL",
@@ -1512,9 +1512,9 @@ mod tests {
     #[cfg(feature = "flight-sql")]
     #[tokio::test(flavor = "current_thread")]
     async fn explicit_flight_sql_never_falls_back() {
-        let closed = StdTcpListener::bind("127.0.0.1:0").expect("bind");
-        let flight_addr = closed.local_addr().expect("local addr");
-        drop(closed);
+        // Port 1 is privileged and never listened on, so a connection is always
+        // refused. A freed ephemeral port could be taken by a concurrent test's server.
+        let flight_addr = "127.0.0.1:1";
         let http = StdTcpListener::bind("127.0.0.1:0").expect("bind");
         let http_addr = http.local_addr().expect("local addr");
         http.set_nonblocking(true).expect("nonblocking");

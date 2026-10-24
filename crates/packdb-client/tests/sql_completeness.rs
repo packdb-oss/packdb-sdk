@@ -295,9 +295,9 @@ mod flight {
     /// says so.
     #[tokio::test]
     async fn a_refused_flight_connection_falls_back_and_reports_it() {
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let flight = format!("http://{}", closed.local_addr().unwrap());
-        drop(closed);
+        // Port 1 is privileged and never listened on, so a connection is always
+        // refused. A freed ephemeral port could be taken by a concurrent test's server.
+        let flight = String::from("http://127.0.0.1:1");
         let http = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v1/sql"))
@@ -323,9 +323,9 @@ mod flight {
     /// fallback history: which transport failed and why Flight SQL was skipped.
     #[tokio::test]
     async fn a_failure_after_fallback_keeps_the_fallback_history() {
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let flight = format!("http://{}", closed.local_addr().unwrap());
-        drop(closed);
+        // Port 1 is privileged and never listened on, so a connection is always
+        // refused. A freed ephemeral port could be taken by a concurrent test's server.
+        let flight = String::from("http://127.0.0.1:1");
         let http = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v1/sql"))
