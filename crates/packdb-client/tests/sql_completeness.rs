@@ -88,6 +88,37 @@ mod flight {
     use prost::Message;
     use tonic::{Request, Response, Status};
 
+    /// An address that refuses connections. Its port is the local end of an
+    /// open loopback connection: nothing listens on it, and while this is held
+    /// the system does not assign the port to another socket bound to port 0,
+    /// as every test server here is. The refusal is checked here, not assumed.
+    struct Refusing {
+        addr: std::net::SocketAddr,
+        _held: (
+            std::net::TcpListener,
+            std::net::TcpStream,
+            std::net::TcpStream,
+        ),
+    }
+
+    fn refusing_address() -> Refusing {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client = std::net::TcpStream::connect(listener.local_addr().expect("listener addr"))
+            .expect("connect");
+        let (server, _) = listener.accept().expect("accept");
+        let addr = client.local_addr().expect("local addr");
+        let refused = std::net::TcpStream::connect(addr).expect_err("nothing listens");
+        assert_eq!(
+            refused.kind(),
+            std::io::ErrorKind::ConnectionRefused,
+            "{refused}"
+        );
+        Refusing {
+            addr,
+            _held: (listener, client, server),
+        }
+    }
+
     struct Stub {
         carrier: Option<&'static str>,
         fail_stream: bool,
@@ -295,9 +326,8 @@ mod flight {
     /// says so.
     #[tokio::test]
     async fn a_refused_flight_connection_falls_back_and_reports_it() {
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let flight = format!("http://{}", closed.local_addr().unwrap());
-        drop(closed);
+        let refusing = refusing_address();
+        let flight = format!("http://{}", refusing.addr);
         let http = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v1/sql"))
@@ -323,9 +353,8 @@ mod flight {
     /// fallback history: which transport failed and why Flight SQL was skipped.
     #[tokio::test]
     async fn a_failure_after_fallback_keeps_the_fallback_history() {
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let flight = format!("http://{}", closed.local_addr().unwrap());
-        drop(closed);
+        let refusing = refusing_address();
+        let flight = format!("http://{}", refusing.addr);
         let http = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/v1/sql"))
