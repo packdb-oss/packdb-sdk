@@ -1149,6 +1149,37 @@ mod tests {
         (addr, handle)
     }
 
+    /// An address that refuses connections. Its port is the local end of an
+    /// open loopback connection: nothing listens on it, and while this is held
+    /// the system does not assign the port to another socket bound to port 0,
+    /// as every test server here is. The refusal is checked here, not assumed.
+    struct Refusing {
+        addr: std::net::SocketAddr,
+        _held: (
+            std::net::TcpListener,
+            std::net::TcpStream,
+            std::net::TcpStream,
+        ),
+    }
+
+    fn refusing_address() -> Refusing {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client = std::net::TcpStream::connect(listener.local_addr().expect("listener addr"))
+            .expect("connect");
+        let (server, _) = listener.accept().expect("accept");
+        let addr = client.local_addr().expect("local addr");
+        let refused = std::net::TcpStream::connect(addr).expect_err("nothing listens");
+        assert_eq!(
+            refused.kind(),
+            std::io::ErrorKind::ConnectionRefused,
+            "{refused}"
+        );
+        Refusing {
+            addr,
+            _held: (listener, client, server),
+        }
+    }
+
     fn client_for(addr: std::net::SocketAddr) -> SqlClient {
         SqlClient::new(SqlClientConfig {
             url: format!("http://{addr}"),
@@ -1484,9 +1515,8 @@ mod tests {
     #[cfg(feature = "flight-sql")]
     #[tokio::test(flavor = "current_thread")]
     async fn a_rejection_after_flight_fallback_is_still_a_sql_error() {
-        // Port 1 is privileged and never listened on, so a connection is always
-        // refused. A freed ephemeral port could be taken by a concurrent test's server.
-        let flight_addr = "127.0.0.1:1";
+        let refusing = refusing_address();
+        let flight_addr = refusing.addr;
         let (addr, server) = one_shot_server(http_response(
             "400 Bad Request",
             "Query error: Failed to parse SQL",
@@ -1512,9 +1542,8 @@ mod tests {
     #[cfg(feature = "flight-sql")]
     #[tokio::test(flavor = "current_thread")]
     async fn explicit_flight_sql_never_falls_back() {
-        // Port 1 is privileged and never listened on, so a connection is always
-        // refused. A freed ephemeral port could be taken by a concurrent test's server.
-        let flight_addr = "127.0.0.1:1";
+        let refusing = refusing_address();
+        let flight_addr = refusing.addr;
         let http = StdTcpListener::bind("127.0.0.1:0").expect("bind");
         let http_addr = http.local_addr().expect("local addr");
         http.set_nonblocking(true).expect("nonblocking");
