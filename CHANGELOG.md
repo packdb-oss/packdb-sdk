@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `packdb-otel` and the `flight-sql` feature of `packdb-client` no longer enable
+  `tonic`'s `zstd` feature; gzip remains. Nothing in the SDK selected zstd, and the
+  feature pulled `zstd` 0.13 and `zstd-safe` 7.3, which carry open RustSec
+  advisories. An application that needs zstd gRPC compression can enable `tonic`'s
+  `zstd` feature itself.
 - Breaking: `ClientError` is `#[non_exhaustive]` and distinguishes
   `Unauthenticated` (401) and `PermissionDenied` (403), which were
   `ConnectionError`. Flight SQL errors keep their gRPC status meaning.
