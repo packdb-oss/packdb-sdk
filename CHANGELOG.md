@@ -21,6 +21,13 @@
 - Deprecate `ClientError::exit_code`.
 - Add `OutputFormat::render` for rows already in hand, such as those returned
   with their completeness.
+- Fix: table and CSV output no longer change values. Every number became a
+  64-bit float, so integers above 2^53 lost digits and `1` printed as `1.0`, and
+  each column took its type from the first row, so a later value of another type,
+  or any value in a column that started null, printed empty. Each cell is now the
+  decoded value as JSON writes it (strings unquoted, null empty, arrays and
+  objects as compact JSON). Columns are every key in the order first seen, and a
+  row that is not an object is refused wherever it appears.
 - Add `QueryApiClient` for the PromQL (`/api/v1/query`, `/api/v1/query_range`),
   LogQL (`/loki/api/v1/query`, `/loki/api/v1/query_range`) and TraceQL
   (`/api/search`, `/api/v2/traces/{id}`) APIs. It needs no feature, returns the
