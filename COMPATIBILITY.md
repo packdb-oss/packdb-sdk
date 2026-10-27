@@ -72,11 +72,9 @@ causes to a successful HTTP fallback response.
 
 ## Exclusions
 
-The SDK transports credentials supplied by its caller. It does not ship server
-lifecycle/build primitives or duplicate Loki/Prometheus response DTOs, issue or
-validate credentials, resolve organizations or tenants, call the control plane,
-enforce quotas, or perform cell placement and routing. Those are not compatibility
-promises of these packages.
+The SDK provides client-side libraries and transports credentials supplied by its
+caller. Running or configuring a server, and issuing or validating credentials,
+are outside the compatibility promises of these packages.
 
 The MSRV is Rust 1.94.1. Raising it is a documented release change. Support is
 community best effort; this compatibility statement makes no quality, availability,

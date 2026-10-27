@@ -9,9 +9,8 @@ packages:
 | `packdb-otel` | Protocol-neutral W3C trace-context propagation for HTTP and gRPC |
 | `packdb-client` | SQL over HTTP or Flight SQL, output formatting, caller-supplied credentials and client errors |
 
-Server lifecycle/build primitives, duplicate wire DTOs, control-plane access,
-credential issuance, tenant resolution, admission, placement, routing and other
-commercial service contracts are outside this repository.
+This workspace provides client-side libraries. It does not run a server or
+issue credentials.
 
 ## Status and use
 
