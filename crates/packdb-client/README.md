@@ -10,9 +10,8 @@ failure the same way.
 With the `flight-sql` feature the SQL client prefers Arrow Flight SQL when
 an endpoint is configured, and uses HTTP otherwise.
 
-The crate accepts credentials but does not issue or validate them. Tenant
-resolution, service JWTs, control-plane access, PromQL/LogQL administration,
-placement, and routing live in private commercial crates.
+The crate transports caller-supplied credentials; issuing and validating
+credentials is the server's responsibility.
 
 ## Status
 
