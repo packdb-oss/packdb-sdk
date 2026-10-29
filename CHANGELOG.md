@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - `packdb-otel` and the `flight-sql` feature of `packdb-client` no longer enable
   `tonic`'s `zstd` feature; gzip remains. Nothing in the SDK selected zstd, and the
