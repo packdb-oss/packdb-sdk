@@ -34,7 +34,7 @@ below is only for an operator-provided local deployment.
 In a new directory, check out the released SDK and create a sibling application:
 
 ```sh
-git clone --branch v0.2.4 --depth 1 https://github.com/packdb-oss/packdb-sdk.git
+git clone --branch v0.3.0 --depth 1 https://github.com/packdb-oss/packdb-sdk.git
 cargo new packdb-query-example
 cd packdb-query-example
 ```
@@ -46,7 +46,7 @@ packdb-client = { path = "../packdb-sdk/crates/packdb-client", features = ["sql"
 tokio = { version = "1.49", features = ["macros", "rt-multi-thread"] }
 ```
 
-The path must point to the `v0.2.4` checkout above. A path dependency does not pin
+The path must point to the `v0.3.0` checkout above. A path dependency does not pin
 a Git revision; do not substitute an older or modified SDK checkout.
 
 Use this as `src/main.rs`:
