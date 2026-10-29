@@ -17,7 +17,7 @@
 use crate::completeness::{QueryResponse, partial_causes_of};
 use crate::credentials::AuthProvider;
 use crate::error::{ClientError, ClientResult};
-use arrow::array::{ArrayRef, BooleanArray, Float64Array, StringArray};
+use arrow::array::{ArrayRef, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use reqwest::header::HeaderMap;
@@ -890,7 +890,13 @@ fn format_table(rows: &[serde_json::Value]) -> ClientResult<String> {
     Ok(formatted.to_string())
 }
 
-/// Convert JSON rows to Arrow RecordBatch
+/// Convert JSON rows to an Arrow `RecordBatch` for the table and CSV writers.
+///
+/// Every column is text holding each decoded value as JSON writes it, so the
+/// rendering never changes a value: integers stay exact past 2^53 and at the
+/// `i64`/`u64` limits, and a column whose values differ in type, or start
+/// null, keeps every value. Arrays and objects are compact JSON. A null or a
+/// missing key is an empty cell. Columns are every key in the order first seen.
 fn json_to_record_batch(rows: &[serde_json::Value]) -> ClientResult<RecordBatch> {
     if rows.is_empty() {
         return Err(ClientError::ProtocolError(
@@ -898,75 +904,50 @@ fn json_to_record_batch(rows: &[serde_json::Value]) -> ClientResult<RecordBatch>
         ));
     }
 
-    let first_row = rows
-        .first()
-        .and_then(|r| r.as_object())
-        .ok_or_else(|| ClientError::ProtocolError("Invalid row format".into()))?;
-
-    let fields: Vec<Field> = first_row
+    let objects = rows
         .iter()
-        .map(|(key, value)| {
-            let dtype = match value {
-                serde_json::Value::Number(_) => DataType::Float64,
-                serde_json::Value::String(_) => DataType::Utf8,
-                serde_json::Value::Bool(_) => DataType::Boolean,
-                _ => DataType::Utf8,
-            };
-            Field::new(key.clone(), dtype, true)
+        .map(|row| {
+            row.as_object()
+                .ok_or_else(|| ClientError::ProtocolError("Invalid row format".into()))
         })
-        .collect();
+        .collect::<ClientResult<Vec<_>>>()?;
 
-    let schema = Arc::new(Schema::new(fields.clone()));
-    let num_rows = rows.len();
-
-    let arrays: Result<Vec<ArrayRef>, ClientError> = fields
-        .iter()
-        .map(|field| {
-            let col_name = field.name();
-
-            match field.data_type() {
-                DataType::Float64 => {
-                    let arr: Float64Array = (0..num_rows)
-                        .map(|i| {
-                            rows.get(i)
-                                .and_then(|row| row.get(col_name))
-                                .and_then(|v| v.as_f64())
-                        })
-                        .collect();
-                    Ok(Arc::new(arr) as ArrayRef)
-                }
-                DataType::Boolean => {
-                    let arr: BooleanArray = (0..num_rows)
-                        .map(|i| {
-                            rows.get(i)
-                                .and_then(|row| row.get(col_name))
-                                .and_then(|v| v.as_bool())
-                        })
-                        .collect();
-                    Ok(Arc::new(arr) as ArrayRef)
-                }
-                DataType::Utf8 => {
-                    let arr: StringArray = (0..num_rows)
-                        .map(|i| {
-                            rows.get(i)
-                                .and_then(|row| row.get(col_name))
-                                .and_then(|v| v.as_str())
-                        })
-                        .collect();
-                    Ok(Arc::new(arr) as ArrayRef)
-                }
-                _ => Err(ClientError::ProtocolError(format!(
-                    "Unsupported type: {}",
-                    field.data_type()
-                ))),
+    let mut names: Vec<&String> = Vec::new();
+    for object in &objects {
+        for key in object.keys() {
+            if !names.contains(&key) {
+                names.push(key);
             }
+        }
+    }
+
+    let fields: Vec<Field> = names
+        .iter()
+        .map(|name| Field::new(name.as_str(), DataType::Utf8, true))
+        .collect();
+    let arrays: Vec<ArrayRef> = names
+        .iter()
+        .map(|name| {
+            let column: StringArray = objects
+                .iter()
+                .map(|object| object.get(name.as_str()).and_then(cell_text))
+                .collect();
+            Arc::new(column) as ArrayRef
         })
         .collect();
 
-    let arrays = arrays?;
-
-    RecordBatch::try_new(schema, arrays)
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays)
         .map_err(|e| ClientError::ProtocolError(format!("RecordBatch creation failed: {e}")))
+}
+
+/// A cell's text: the value as JSON writes it, with strings unquoted and null
+/// empty.
+fn cell_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -1111,6 +1092,86 @@ mod tests {
         let batch = json_to_record_batch(&rows).expect("batch ok");
         assert_eq!(batch.num_rows(), 2);
         assert_eq!(batch.num_columns(), 3);
+    }
+
+    #[test]
+    fn csv_and_table_keep_integers_exact() {
+        let rows = vec![
+            serde_json::json!({"n": 9_007_199_254_740_993_u64}),
+            serde_json::json!({"n": 1_791_227_706_083_264_631_u64}),
+            serde_json::json!({"n": u64::MAX}),
+            serde_json::json!({"n": i64::MAX}),
+            serde_json::json!({"n": i64::MIN}),
+            serde_json::json!({"n": -1}),
+            serde_json::json!({"n": 0}),
+            serde_json::json!({"n": 1}),
+        ];
+        let csv = format_csv(&rows).expect("format_csv ok");
+        assert_eq!(
+            csv,
+            "n\n9007199254740993\n1791227706083264631\n18446744073709551615\n\
+             9223372036854775807\n-9223372036854775808\n-1\n0\n1\n"
+        );
+        let table = format_table(&rows).expect("format_table ok");
+        for value in [
+            "9007199254740993",
+            "1791227706083264631",
+            "18446744073709551615",
+            "-9223372036854775808",
+        ] {
+            assert!(
+                table.contains(&format!("| {value}")),
+                "{value} not in {table}"
+            );
+        }
+        assert!(!table.contains("e18"), "{table}");
+    }
+
+    #[test]
+    fn csv_keeps_floats_as_decoded() {
+        let rows = vec![
+            serde_json::json!({"x": 42.0}),
+            serde_json::json!({"x": 0.1}),
+            serde_json::json!({"x": 1e300}),
+            serde_json::json!({"x": -2.5}),
+        ];
+        let csv = format_csv(&rows).expect("format_csv ok");
+        assert_eq!(csv, "x\n42.0\n0.1\n1e+300\n-2.5\n");
+    }
+
+    #[test]
+    fn csv_keeps_every_value_of_a_null_first_or_mixed_column() {
+        let rows = vec![
+            serde_json::json!({"a": null, "b": "text"}),
+            serde_json::json!({"a": 7, "b": 8}),
+            serde_json::json!({"a": true, "b": [1, "x"]}),
+            serde_json::json!({"a": "s", "b": {"k": 1}}),
+        ];
+        let csv = format_csv(&rows).expect("format_csv ok");
+        assert_eq!(
+            csv,
+            "a,b\n,text\n7,8\ntrue,\"[1,\"\"x\"\"]\"\ns,\"{\"\"k\"\":1}\"\n"
+        );
+    }
+
+    #[test]
+    fn csv_includes_a_key_first_seen_in_a_later_row() {
+        let rows = vec![
+            serde_json::json!({"a": 1}),
+            serde_json::json!({"a": 2, "b": 3}),
+        ];
+        let csv = format_csv(&rows).expect("format_csv ok");
+        assert_eq!(csv, "a,b\n1,\n2,3\n");
+    }
+
+    #[test]
+    fn json_to_record_batch_rejects_a_later_non_object_row() {
+        let rows = vec![serde_json::json!({"a": 1}), serde_json::json!(2)];
+        let err = json_to_record_batch(&rows).expect_err("must reject non-object");
+        assert!(
+            matches!(&err, ClientError::ProtocolError(msg) if msg.contains("Invalid row format")),
+            "{err:?}"
+        );
     }
 
     // -----------------------------------------------------------------

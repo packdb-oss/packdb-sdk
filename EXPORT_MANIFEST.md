@@ -25,10 +25,8 @@ This file keeps its name because the repository's policy check requires it.
 
 - **`publish = false` is retained.** Clearing that flag is part of an
   authorised publication, not part of building a release.
-- **`packdb-client` documents what it excludes** -- credential issuance,
-  tenant resolution, control-plane access. That names internal concepts
-  because it is a boundary statement, and removing it would make the public
-  scope less legible rather than more.
+- **`packdb-client` accepts caller-supplied credentials.** Issuing and
+  validating credentials are responsibilities of the server, not these libraries.
 - **Each member carries its own `LICENSE` copy.** `cargo package` includes
   only files inside a crate directory, so a root-only licence would ship
   with the repository but not with the published crate.

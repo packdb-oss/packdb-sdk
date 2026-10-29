@@ -1,6 +1,6 @@
 # Compatibility
 
-All packages currently use the 0.2.x version line. Before 1.0, a breaking Rust API
+All packages currently use the 0.3.x version line. Before 1.0, a breaking Rust API
 change increments the minor version. Patch releases preserve the documented public
 API and serialized response shapes. Release notes identify intentional changes.
 
@@ -35,6 +35,14 @@ Breaking changes:
   query may have been sent is returned, including a stream that fails part-way.
 - `ClientError::exit_code` is deprecated; exit codes belong to the command that
   reports the error.
+- `packdb-otel` and the `flight-sql` feature of `packdb-client` no longer enable
+  `tonic`'s `zstd` feature; gzip remains. An application that needs zstd gRPC
+  compression enables `tonic`'s `zstd` feature itself.
+
+Table and CSV output from `OutputFormat` now prints each cell as the decoded value
+(strings unquoted, null empty, arrays and objects as compact JSON). Earlier
+releases printed every number as a 64-bit float and typed each column from its
+first row. JSON output is unchanged.
 
 Additions: `SqlClient::execute_query_rows_with_transport`, `RowsAnswer` and
 `TransportUsed` report which transport answered and why `Auto` fell back. On
@@ -72,11 +80,9 @@ causes to a successful HTTP fallback response.
 
 ## Exclusions
 
-The SDK transports credentials supplied by its caller. It does not ship server
-lifecycle/build primitives or duplicate Loki/Prometheus response DTOs, issue or
-validate credentials, resolve organizations or tenants, call the control plane,
-enforce quotas, or perform cell placement and routing. Those are not compatibility
-promises of these packages.
+The SDK provides client-side libraries and transports credentials supplied by its
+caller. Running or configuring a server, and issuing or validating credentials,
+are outside the compatibility promises of these packages.
 
 The MSRV is Rust 1.94.1. Raising it is a documented release change. Support is
 community best effort; this compatibility statement makes no quality, availability,
